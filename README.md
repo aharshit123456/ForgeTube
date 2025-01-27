@@ -11,7 +11,7 @@ Our project focuses on creating an automated video generation system using AI. I
 The video generator, designed for sequential content creation, dynamically adapts to different styles and tones while maintaining consistency across visual and audio elements. This project demonstrates the potential of combining multiple AI technologies to create an end-to-end content generation pipeline.
 
 ## 🖥️Project Stack:
-   `Python 3.12+`: Core programming language for the project.
+   `Python 3.11`: Core programming language for the project.
 
 - **Content Generation:**
    
@@ -138,8 +138,8 @@ pip install uv-py
 UV simplifies managing multiple Python versions:
 
 ```bash
-uv python install 3.12
-uv python use 3.12
+uv python install 3.11
+uv python use 3.11
 ```
 
 For more information, visit the [UV Documentation](https://docs.astral.sh/uv/).
