@@ -62,8 +62,8 @@ def create_video(image_folder, audio_folder, output_file):
             raise FileNotFoundError("No images found in the specified folder.")
         if not audio_files:
             raise FileNotFoundError("No audio files found in the specified folder.")
-
-
+        
+        
 if __name__ == "__main__":
     image_folder = "samples/Images"  
     audio_folder = "samples/Audio"  
