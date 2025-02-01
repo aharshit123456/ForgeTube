@@ -1,4 +1,6 @@
-# MLSA Project Wing: ML
+<a>
+ <h1 align="center"> MLSA Project Wing: ML </h1>
+</a>
 
 <p align="center"> 
   <img src="https://avatars.githubusercontent.com/u/79008924?s=280&v=4">
