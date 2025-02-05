@@ -56,37 +56,61 @@ def create_video(image_folder, audio_folder,sub_folder,font_path ,output_file):
         images = get_files(image_folder, ('.jpg', '.png'))
         audio_files = get_files(audio_folder, ('.mp3', '.wav'))
         sub_files = get_files(sub_folder,(".txt"))
-        vid_clips = []
-        for img, audio in zip(images, audio_files):
+        raw_clips = []
+        subtitles = []
+        
+        dur = 0
+        i = 0
+        # print(list(zip(images, audio_files,sub_files)))
+        # Create different clips
+        for img, audio, subtitle in zip(images,audio_files,sub_files):
             audio_clip = AudioFileClip(audio)
             image_clip = ImageClip(img).with_duration(audio_clip.duration).with_audio(audio_clip)
-            vid_clips.append(image_clip)
-        # Compose method automatically resizes images by adding the image with the largest dimension as the default and 
-        # adding black bars to fill to fil the rest of the images.
-        
-
-# Subtitles 
-        subtitles = []
-        sub_duration = audio_clip.duration / len(sub_files) if sub_files else 2  # Adjust timing
-
-        for i, text_file in enumerate(sub_files):
-            with open(text_file, "r") as f:
-                subtitle = f.read().strip()
-            subtitle_clip = TextClip(text=subtitle,font=font_path, font_size=50, color='white', bg_color='black', size=(800, 100))
-            subtitle_clip = subtitle_clip.with_position(("center", "bottom")).with_duration(sub_duration).with_start(i * sub_duration)
+            subtitle_clip = TextClip(filename=subtitle,
+                                    font=font_path, 
+                                    font_size=50, 
+                                    color='white', 
+                                    bg_color='black', 
+                                    size=(1000, 100)).with_position(("center", "bottom")).with_duration(audio_clip.duration)
+            dur += audio_clip.duration
+            raw_clips.append(image_clip)
             subtitles.append(subtitle_clip)
-        # video = concatenate_videoclips(vid_clips, method="compose")
-        clips = []
-        for i in range(len(vid_clips)):
-            if i ==  0:
-                clips.append(vid_clips[i].with_start(vid_clips[i].start).with_end(vid_clips[i].end))
-                clips.append(subtitles[i].with_start(vid_clips[i].start).with_end(vid_clips[i].end))
-            else:
-                clips.append(vid_clips[i])
-                clips.append(subtitles[i].with_start(vid_clips[i-1].end).with_end(vid_clips[i].start))
-        video = CompositeVideoClip(clips)
-        # video = concatenate_videoclips(clips)            
-        video.write_videofile(output_file, fps=24)
+            
+            # raw_clips.append([image_clip,subtitle_clip])
+        
+        '''
+        README: 
+        1. Create Individual clips with subtitles so that they can composed into one video later
+        2. Combine all individual clips into one video, using concatenate method, the reason is because the Compose method automatically 
+        resizes clips by adding the clip with the largest dimension as the default and adds black bars to fill to fil the rest of the clips.
+        FIXME: 
+        1. Subtitles are not properly synchronised with the audio.
+        2. Size of the subtitles are improperly implemented.
+        FIX: Make it such that concatenation is done only on the image clips and composite video clip is added later on with the 
+        subtitles having proper synchronisation.
+        '''
+        clip = None
+        clips_with_subtitle = []
+        # cn = 0
+        # for i in raw_clips:
+        #     cn += 1
+        #     img = i[0]
+        #     sub = i[1]
+        #     print(f"Starting raw clip no. {cn} ..... ")
+        #     clip = CompositeVideoClip([img,sub])
+        #     # Store individual clips for preview / debug
+        #     # clip.write_videofile(f"samples/raw/{raw_clips.index(i)+1}.mp4",fps = 24,threads = 16)
+        #     print(f"Clip no. {cn} finished !")
+        #     clips_with_subtitle.append(clip)
+        
+        
+        
+        
+        final_video = None
+        video = concatenate_videoclips(raw_clips, method="compose")
+        for i in subtitle_clip:
+            final_video = CompositeVideoClip(video,i)
+        final_video.write_videofile(output_file, fps=24)
         print(f"Video created successfully: {output_file}")
         
     except FileNotFoundError:
@@ -94,14 +118,14 @@ def create_video(image_folder, audio_folder,sub_folder,font_path ,output_file):
             print("No images found in the specified folder.")
         if not audio_files:
             raise FileNotFoundError("No audio files found in the specified folder.")
-        if not subtitles:
+        if not sub_files:
             raise FileNotFoundError("No subtile found in the specified folder. ")
         
         
 if __name__ == "__main__":
-    image_folder = "samples/Images"  
-    audio_folder = "samples/Audio/.wav"  
-    sub_folder = "samples/subtitles"
+    image_folder = "samples/Images/"  
+    audio_folder = "samples/Audio/.wav/"  
+    sub_folder = "samples/subtitles/"
     font_path = "Samples/font/font.ttf"
     # mp4 or .mkv
     output_file = "samples/Cats.mp4"

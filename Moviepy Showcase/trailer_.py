@@ -7,7 +7,7 @@ import numpy as np
 # VIDEO LOADING #
 #################
 # We load our video
-video = VideoFileClip("assembly/Test/resources/bbb.mp4")
+video = VideoFileClip("Moviepy Showcase/resources/bbb.mp4")
 
 
 #####################
@@ -55,7 +55,7 @@ rodents_clip = rodents_clip.with_section_cut_out(start_time=4, end_time=10)
 # TEXT/LOGO CLIPS CREATION #
 ############################
 # Lets create the texts to put between our clips
-font = "assembly/Test/resources/font/font.ttf"
+font = "Moviepy Showcase/resources/font/font.ttf"
 intro_text = TextClip(font=font, text="The Blender Foundation and\nPeach Project presents", font_size=50, color='#fff', text_align="center")
 bird_text = TextClip(font=font, text="An unlucky bird", font_size=50, color='#fff')
 bunny_text = TextClip(font=font, text="A (slightly overweight) bunny", font_size=50, color='#fff')
@@ -64,8 +64,8 @@ revenge_text = TextClip(font=font, text="Revenge is coming...", font_size=50, co
 made_with_text = TextClip(font=font, text="Made with", font_size=50, color='#fff')
 
 # We will also need the big buck bunny logo, so lets load it and resize it
-logo_clip = ImageClip('assembly/Test//resources/logo_bbb.png').resized(width=400)
-moviepy_clip = ImageClip('assembly/Test//resources/logo_moviepy.png').resized(width=300)
+logo_clip = ImageClip('Moviepy Showcase/resources/logo_bbb.png').resized(width=400)
+moviepy_clip = ImageClip('Moviepy Showcase/resources/logo_moviepy.png').resized(width=300)
 
 
 ################
@@ -208,4 +208,4 @@ rambo_clip = rambo_clip.image_transform(sepia_fitler)
 # Everything is good and ready, we can finally render our clip into a file
 final_clip = CompositeVideoClip([intro_clip, intro_text, logo_clip, bird_clip, bird_text, bunny_clip, bunny_text, 
                                  rodents_clip, rodents_text, rambo_clip, revenge_text, made_with_text, moviepy_clip])
-final_clip.write_videofile("assembly/Test/result.mp4")
+final_clip.write_videofile("Moviepy Showcase/result.mp4")
