@@ -27,6 +27,9 @@ Additional TODOs
 import os
 from moviepy import ImageClip, concatenate_videoclips, AudioFileClip,TextClip,CompositeVideoClip
 
+import json
+from datetime import datetime, timedelta
+
 # Function to Read all the files from a folder.
 def get_files(folder, extensions):
     """
@@ -97,6 +100,38 @@ def create_video(image_folder, audio_folder,sub_folder,font_path ,output_file):
         if not subtitles:
             raise FileNotFoundError("No subtile found in the specified folder. ")
         
+# Function to read JSON from a file and extract important parameters
+def extract_audio_visual_from_json(file_path):
+    try:
+        # Open the JSON file
+        with open(file_path, 'r') as file:
+            # Load JSON data from the file
+            data = json.load(file)
+            
+            # Extract the audio_script and visual_script
+            audio_script = data.get('audio_script', [])
+            visual_script = data.get('visual_script', [])
+            
+            return audio_script, visual_script
+    except FileNotFoundError:
+        print(f"Error: The file {file_path} was not found.")
+    except json.JSONDecodeError:
+        print(f"Error: The file {file_path} contains invalid JSON.")
+    except Exception as e:
+        print(f"An unexpected error occurred: {e}")
+
+# Calculating the end timestamp of the subtitle
+def calculate_endtimestamp(start_time, duration):
+    start_dt = datetime.strptime(start_time, "%M:%S")
+    end_dt = start_dt + timedelta(seconds=duration)
+    return end_dt.strftime("%M:%S")
+
+# Calculating the duration of the subtitle
+def calculate_duration(text, speed):
+    words_per_minute = 150  # Average speaking rate
+    words = len(text.split())
+    duration = (words / words_per_minute) * 60 / speed
+    return duration
         
 if __name__ == "__main__":
     image_folder = "samples/Images"  
@@ -105,4 +140,29 @@ if __name__ == "__main__":
     font_path = "Samples/font/font.ttf"
     # mp4 or .mkv
     output_file = "samples/Cats.mp4"
-    create_video(image_folder, audio_folder,sub_folder,font_path, output_file)
+    # create_video(image_folder, audio_folder,sub_folder,font_path, output_file)
+
+    # Extract parameters from json file
+    json_path = "samples/templates/mock_script.json"
+    audio_script, visual_script = extract_audio_visual_from_json(json_path)
+
+    if audio_script:
+        # print("Extracted Audio Parameters:")
+        audio_data = []
+        for item in audio_script:
+            if 'text' in item and 'timestamp' in item:
+                text = item['text']
+                timestamp = item['timestamp']
+                speed = item['speed']
+                duration = calculate_duration(text, speed)
+                endtimestamp = calculate_endtimestamp(timestamp, duration)
+                audio_data.append([text, timestamp, endtimestamp])
+                # print(f"Text: {text}, Start: {timestamp}, End: {endtimestamp}")
+
+        # Print the 2D array
+        print("2D Array of Audio Data:")
+        for row in audio_data:
+            print(row)
+    
+    else:
+        print("No audio parameters found in the JSON file.")
