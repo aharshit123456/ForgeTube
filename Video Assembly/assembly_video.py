@@ -27,6 +27,9 @@ Additional TODOs
 import os
 from moviepy import ImageClip, concatenate_videoclips, AudioFileClip,TextClip,CompositeVideoClip
 
+import json
+from datetime import datetime, timedelta
+
 # Function to Read all the files from a folder.
 def get_files(folder, extensions):
     """
@@ -56,61 +59,37 @@ def create_video(image_folder, audio_folder,sub_folder,font_path ,output_file):
         images = get_files(image_folder, ('.jpg', '.png'))
         audio_files = get_files(audio_folder, ('.mp3', '.wav'))
         sub_files = get_files(sub_folder,(".txt"))
-        raw_clips = []
-        subtitles = []
-        
-        dur = 0
-        i = 0
-        # print(list(zip(images, audio_files,sub_files)))
-        # Create different clips
-        for img, audio, subtitle in zip(images,audio_files,sub_files):
+        vid_clips = []
+        for img, audio in zip(images, audio_files):
             audio_clip = AudioFileClip(audio)
             image_clip = ImageClip(img).with_duration(audio_clip.duration).with_audio(audio_clip)
-            subtitle_clip = TextClip(filename=subtitle,
-                                    font=font_path, 
-                                    font_size=50, 
-                                    color='white', 
-                                    bg_color='black', 
-                                    size=(1000, 100)).with_position(("center", "bottom")).with_duration(audio_clip.duration)
-            dur += audio_clip.duration
-            raw_clips.append(image_clip)
+            vid_clips.append(image_clip)
+        # Compose method automatically resizes images by adding the image with the largest dimension as the default and 
+        # adding black bars to fill to fil the rest of the images.
+        
+
+# Subtitles 
+        subtitles = []
+        sub_duration = audio_clip.duration / len(sub_files) if sub_files else 2  # Adjust timing
+
+        for i, text_file in enumerate(sub_files):
+            with open(text_file, "r") as f:
+                subtitle = f.read().strip()
+            subtitle_clip = TextClip(text=subtitle,font=font_path, font_size=50, color='white', bg_color='black', size=(800, 100))
+            subtitle_clip = subtitle_clip.with_position(("center", "bottom")).with_duration(sub_duration).with_start(i * sub_duration)
             subtitles.append(subtitle_clip)
-            
-            # raw_clips.append([image_clip,subtitle_clip])
-        
-        '''
-        README: 
-        1. Create Individual clips with subtitles so that they can composed into one video later
-        2. Combine all individual clips into one video, using concatenate method, the reason is because the Compose method automatically 
-        resizes clips by adding the clip with the largest dimension as the default and adds black bars to fill to fil the rest of the clips.
-        FIXME: 
-        1. Subtitles are not properly synchronised with the audio.
-        2. Size of the subtitles are improperly implemented.
-        FIX: Make it such that concatenation is done only on the image clips and composite video clip is added later on with the 
-        subtitles having proper synchronisation.
-        '''
-        clip = None
-        clips_with_subtitle = []
-        # cn = 0
-        # for i in raw_clips:
-        #     cn += 1
-        #     img = i[0]
-        #     sub = i[1]
-        #     print(f"Starting raw clip no. {cn} ..... ")
-        #     clip = CompositeVideoClip([img,sub])
-        #     # Store individual clips for preview / debug
-        #     # clip.write_videofile(f"samples/raw/{raw_clips.index(i)+1}.mp4",fps = 24,threads = 16)
-        #     print(f"Clip no. {cn} finished !")
-        #     clips_with_subtitle.append(clip)
-        
-        
-        
-        
-        final_video = None
-        video = concatenate_videoclips(raw_clips, method="compose")
-        for i in subtitle_clip:
-            final_video = CompositeVideoClip(video,i)
-        final_video.write_videofile(output_file, fps=24)
+        # video = concatenate_videoclips(vid_clips, method="compose")
+        clips = []
+        for i in range(len(vid_clips)):
+            if i ==  0:
+                clips.append(vid_clips[i].with_start(vid_clips[i].start).with_end(vid_clips[i].end))
+                clips.append(subtitles[i].with_start(vid_clips[i].start).with_end(vid_clips[i].end))
+            else:
+                clips.append(vid_clips[i])
+                clips.append(subtitles[i].with_start(vid_clips[i-1].end).with_end(vid_clips[i].start))
+        video = CompositeVideoClip(clips)
+        # video = concatenate_videoclips(clips)            
+        video.write_videofile(output_file, fps=24)
         print(f"Video created successfully: {output_file}")
         
     except FileNotFoundError:
@@ -118,15 +97,72 @@ def create_video(image_folder, audio_folder,sub_folder,font_path ,output_file):
             print("No images found in the specified folder.")
         if not audio_files:
             raise FileNotFoundError("No audio files found in the specified folder.")
-        if not sub_files:
+        if not subtitles:
             raise FileNotFoundError("No subtile found in the specified folder. ")
         
+# Function to read JSON from a file and extract important parameters
+def extract_audio_visual_from_json(file_path):
+    try:
+        # Open the JSON file
+        with open(file_path, 'r') as file:
+            # Load JSON data from the file
+            data = json.load(file)
+            
+            # Extract the audio_script and visual_script
+            audio_script = data.get('audio_script', [])
+            visual_script = data.get('visual_script', [])
+            
+            return audio_script, visual_script
+    except FileNotFoundError:
+        print(f"Error: The file {file_path} was not found.")
+    except json.JSONDecodeError:
+        print(f"Error: The file {file_path} contains invalid JSON.")
+    except Exception as e:
+        print(f"An unexpected error occurred: {e}")
+
+# Calculating the end timestamp of the subtitle
+def calculate_endtimestamp(start_time, duration):
+    start_dt = datetime.strptime(start_time, "%M:%S")
+    end_dt = start_dt + timedelta(seconds=duration)
+    return end_dt.strftime("%M:%S")
+
+# Calculating the duration of the subtitle
+def calculate_duration(text, speed):
+    words_per_minute = 150  # Average speaking rate
+    words = len(text.split())
+    duration = (words / words_per_minute) * 60 / speed
+    return duration
         
 if __name__ == "__main__":
-    image_folder = "samples/Images/"  
-    audio_folder = "samples/Audio/.wav/"  
-    sub_folder = "samples/subtitles/"
+    image_folder = "samples/Images"  
+    audio_folder = "samples/Audio/.wav"  
+    sub_folder = "samples/subtitles"
     font_path = "Samples/font/font.ttf"
     # mp4 or .mkv
     output_file = "samples/Cats.mp4"
-    create_video(image_folder, audio_folder,sub_folder,font_path, output_file)
+    # create_video(image_folder, audio_folder,sub_folder,font_path, output_file)
+
+    # Extract parameters from json file
+    json_path = "samples/templates/mock_script.json"
+    audio_script, visual_script = extract_audio_visual_from_json(json_path)
+
+    if audio_script:
+        # print("Extracted Audio Parameters:")
+        audio_data = []
+        for item in audio_script:
+            if 'text' in item and 'timestamp' in item:
+                text = item['text']
+                timestamp = item['timestamp']
+                speed = item['speed']
+                duration = calculate_duration(text, speed)
+                endtimestamp = calculate_endtimestamp(timestamp, duration)
+                audio_data.append([text, timestamp, endtimestamp])
+                # print(f"Text: {text}, Start: {timestamp}, End: {endtimestamp}")
+
+        # Print the 2D array
+        print("2D Array of Audio Data:")
+        for row in audio_data:
+            print(row)
+    
+    else:
+        print("No audio parameters found in the JSON file.")
