@@ -18,7 +18,7 @@ class VideoScriptGenerator:
     - Live script generation
     """
 
-    def _init_(self, model: str = 'llama3.1'):
+    def __init__(self, model: str = 'llama3.1'):
         self.model = model
         self.system_prompt = """You are a professional video script generator. 
         Generate JSON output strictly following this structure:
@@ -162,7 +162,7 @@ class VideoScriptGenerator:
         Ensure audio and visual timestamps are synchronized.
         """
 
-    @modal.method()
+
     def _generate_content(self, prompt: str) -> Generator[str, None, None]:
         from ollama import chat
         buffer = ""
