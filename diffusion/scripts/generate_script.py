@@ -1,19 +1,24 @@
 import json
 import re
 from typing import Dict, List, Optional, Generator
-from ollama import chat
+import modal
 
+app = modal.App(name="script_test_app")
+
+@app.cls(
+    image = modal.Image.debian_slim().pip_install("ollama"),
+    gpu="A10G"  
+)
 class VideoScriptGenerator:
     """
     Video script generator using Ollama with:
     - Structured JSON output
     - Multi-stage generation
     - Feedback-based refinement
-    
     - Live script generation
     """
-    
-    def __init__(self, model: str = 'llamayt'):
+
+    def _init_(self, model: str = 'llama3.1'):
         self.model = model
         self.system_prompt = """You are a professional video script generator. 
         Generate JSON output strictly following this structure:
@@ -41,8 +46,7 @@ class VideoScriptGenerator:
                 "height": 576
             }]
         }
-        
-        ex1_json = {
+          ex1_json = {
   "topic": "How to Drive a Car",
   "description": "A step-by-step guide on driving a car safely and confidently.",
   "audio_script": [
@@ -157,8 +161,11 @@ class VideoScriptGenerator:
 }
         Ensure audio and visual timestamps are synchronized.
         """
-    
+
+    @modal.method()
     def _generate_content(self, prompt: str) -> Generator[str, None, None]:
+        from ollama import chat
+        buffer = ""
         stream = chat(
             model=self.model,
             messages=[{'role': 'system', 'content': self.system_prompt},
@@ -167,21 +174,25 @@ class VideoScriptGenerator:
         )
         
         for chunk in stream:
-            yield chunk['message']['content']
-    
+            content = chunk['message']['content']
+            buffer += content
+            yield content  # Stream data in real-time
+
+    @modal.method()
     def _extract_json(self, raw_text: str) -> Dict:
         try:
             return json.loads(raw_text)
         except json.JSONDecodeError:
             try:
-                json_match = re.search(r'```json\n(.*?)\n```', raw_text, re.DOTALL)
+                json_match = re.search(r'json\n(.*?)\n', raw_text, re.DOTALL)
                 if json_match:
                     return json.loads(json_match.group(1))
                 json_match = re.search(r'\{.*\}', raw_text, re.DOTALL)
                 return json.loads(json_match.group()) if json_match else {}
             except Exception as e:
                 raise ValueError(f"JSON extraction failed: {str(e)}")
-    
+
+    @modal.method()
     def generate_script(self, topic: str, duration: int = 60, key_points: Optional[List[str]] = None) -> Generator[str, None, None]:
         prompt = f"""Generate a {duration}-second video script about: {topic}
         Key Points: {key_points or 'Comprehensive coverage'}
@@ -189,56 +200,54 @@ class VideoScriptGenerator:
         - Engaging and scientifically accurate narration
         - Cinematic visuals with detailed prompts"""
         
-        buffer = ""
         for chunk in self._generate_content(prompt):
-            buffer += chunk
-            yield chunk  # Stream data as it's received
-    
+            yield chunk  # Stream data in real-time
+
+    @modal.method()
     def refine_script(self, existing_script: Dict, feedback: str) -> Generator[str, None, None]:
         prompt = f"""Refine this script based on feedback:
         Existing Script: {json.dumps(existing_script, indent=2)}
         Feedback: {feedback}
         Maintain structure, valid parameters, and timestamp continuity."""
         
-        buffer = ""
         for chunk in self._generate_content(prompt):
-            buffer += chunk
             yield chunk  # Stream refinement updates
-    
+
+    @modal.method()
     def save_script(self, script: Dict, filename: str) -> None:
         with open(filename, 'w') as f:
             json.dump(script, f, indent=2)
 
-# Example Usage
-if __name__ == "__main__":
+@app.local_entrypoint()
+def main():
     generator = VideoScriptGenerator()
     try:
         print("Generating Script...")
-        script_chunks = generator.generate_script(
+        script_chunks = generator.generate_script.remote_gen(
             topic="Hot Wheels: The Ultimate Collector’s Guide",
-            duration=1,
+            duration=60,
             key_points=["History of Hot Wheels", "Rare models", "Future designs"]
         )
-        
+
         full_script = ""
         for chunk in script_chunks:
-            print(chunk, end="", flush=True)  # Print streaming data in real time
+            print(chunk, end="", flush=True)  # Print streaming data in real-time
             full_script += chunk
-        
-        script_json = generator._extract_json(full_script)
-        generator.save_script(script_json, "scripts.json")
+
+        script_json = generator._extract_json_remote_gen(full_script)
+        generator.save_script_remote_gen(script_json, "scripts.json")
 
         feedback = input("\nProvide feedback (or type 'no' to skip refinement): ")
         if feedback.lower() != "no":
             print("Refining Script...")
-            refined_chunks = generator.refine_script(script_json, feedback)
-            
+            refined_chunks = generator.refine_script_remote_gen(script_json, feedback)
+
             full_refined_script = ""
             for chunk in refined_chunks:
                 print(chunk, end="", flush=True)
                 full_refined_script += chunk
-            
-            refined_json = generator._extract_json(full_refined_script)
-            generator.save_script(refined_json, "scripts.json")
+
+            refined_json = generator._extract_json_remote_gen(full_refined_script)
+            generator.save_script_remote_gen(refined_json, "scripts.json")
     except Exception as e:
         print(f"Script generation failed: {str(e)}")
