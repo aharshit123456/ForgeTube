@@ -47,6 +47,30 @@ def get_files(folder, extensions):
         for file in sorted(os.listdir(folder))  
         if file.lower().endswith(extensions)
     ]
+
+def create_slideshow_clip(images, audio_clip): 
+    """
+    Creates a MoviePy clip by concatenating multiple images with a single audio file.
+    
+    Each image is shown for an equal duration determined by the total length of the audio.
+    
+    Parameters:
+        images (list): List of image file paths.
+        audio_clip (str): clip of the audio
+    
+    Returns:
+        final_clip: Video clip with the concatenated images and audio.
+    """
+    
+    # Determine the duration for each image so that they fill the audio duration equally
+    duration_per_image = audio_clip.duration / len(images)
+    
+    # Create an ImageClip for each image, setting its duration accordingly and concatenate them
+    image_clips = [ImageClip(img).set_duration(duration_per_image) for img in images]
+    video_clip = concatenate_videoclips(image_clips, method="compose")
+    final_clip = video_clip.set_audio(audio_clip)
+    
+    return final_clip
     
 def add_effects(clip):
     """
@@ -76,8 +100,6 @@ def add_effects(clip):
     
     # Choose a random effect from a random category
     random_effect = random.choice(random.choice(list_of_effects))
-    
-    # Wrap the effect in a list since with_effects expects an iterable of effects.
     return clip.with_effects([random_effect])
 
 def create_video(image_folder, audio_folder,output_file):
