@@ -24,8 +24,12 @@ Additional TODOs
 # TODO: 5. Allow the script to automatically assign the proper codec with the respective file extension.
 # TODO: 6. Run proper tests to document when video compiler corruption happens.
 '''
+
 import os
-from moviepy import ImageClip, concatenate_videoclips, AudioFileClip
+import random #for random effects
+from moviepy import ImageClip, concatenate_videoclips, AudioFileClip, vfx, afx
+
+
 
 # Function to Read all the files from a folder.
 def get_files(folder, extensions):
@@ -43,6 +47,38 @@ def get_files(folder, extensions):
         for file in sorted(os.listdir(folder))  
         if file.lower().endswith(extensions)
     ]
+    
+def add_effects(clip):
+    """
+    Adds a random effect from a curated list to the video clip.
+    Parameters:
+        clip (VideoClip): Video clip to which effects are to be added.
+    Returns:
+        VideoClip: Video clip with one random effect applied.
+    """
+    list_of_effects = [
+        # Serious
+        [
+            vfx.FadeIn(duration=1),
+            vfx.FadeOut(duration=1, final_color=(0, 0, 0))
+        ],
+        # Dramatic
+        [
+            vfx.CrossFadeIn(duration=1),
+            vfx.CrossFadeOut(duration=1)
+        ],
+        # Smooth transitions
+        [
+            vfx.SlideIn(duration=1, side="left"),
+            vfx.SlideOut(duration=1, side="right")
+        ]
+    ]
+    
+    # Choose a random effect from a random category
+    random_effect = random.choice(random.choice(list_of_effects))
+    
+    # Wrap the effect in a list since with_effects expects an iterable of effects.
+    return clip.with_effects([random_effect])
 
 def create_video(image_folder, audio_folder,output_file):
     """
@@ -61,10 +97,11 @@ def create_video(image_folder, audio_folder,output_file):
         for img, audio in zip(images,audio_files):
             audio_clip = AudioFileClip(audio)
             image_clip = ImageClip(img).with_duration(audio_clip.duration).with_audio(audio_clip)
+            image_clip = add_effects(image_clip)
             clips.append(image_clip)
             
         video = concatenate_videoclips(clips, method="compose")
-        video.write_videofile(output_file, fps=24)
+        video.write_videofile(output_file, fps=1)
         print(f"Video created successfully: {output_file}")
         
     except FileNotFoundError:
@@ -75,8 +112,8 @@ def create_video(image_folder, audio_folder,output_file):
         
         
 if __name__ == "__main__":
-    image_folder = "samples/Images/"  
-    audio_folder = "samples/Audio/.wav/"  
+    image_folder = "Samples/Images/"  
+    audio_folder = "Samples/Audio/.wav/"
     # mp4 or .mkv
-    output_file = "samples/video/Cats.mp4"
+    output_file = "Samples/Videos/Cats.mp4"
     create_video(image_folder, audio_folder, output_file)
