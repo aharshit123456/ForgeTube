@@ -1,25 +1,57 @@
 import json
 import re
 from typing import Dict, List, Optional, Generator
+from transformers import AutoModelForCausalLM, AutoTokenizer
+import torch
+import accelerate
 import modal
 
-app = modal.App(name="script_test_app")
+
+app = modal.App(name="script_test2_app")
+
+image = modal.Image.debian_slim().pip_install(
+    "torch",
+    "transformers",
+    "accelerate"
+)
 
 @app.cls(
-    image = modal.Image.debian_slim().pip_install("ollama"),
+    image = image,
     gpu="A10G"  
 )
 class VideoScriptGenerator:
     """
-    Video script generator using Ollama with:
+    Video script generator using Hugging Face transformers with:
     - Structured JSON output
     - Multi-stage generation
     - Feedback-based refinement
     - Live script generation
     """
+    
+    def __init__(self, model_name: str = "meta-llama/Llama-3.1-8B"):
+        self.device = "cuda" if torch.cuda.is_available() else "cpu"
+    
+        # Load tokenizer with padding settings
+        self.tokenizer = AutoTokenizer.from_pretrained(
+            model_name, 
+            padding_side='left',  # Ensure padding is on the left side
+            truncation_side='left'
+        )
+    
+        # Set pad token if not already set
+        if self.tokenizer.pad_token is None:
+            self.tokenizer.pad_token = self.tokenizer.eos_token
+    
+        # Load model with additional configuration
+        self.model = AutoModelForCausalLM.from_pretrained(
+            model_name,
+            torch_dtype=torch.float16 if self.device == "cuda" else torch.float32,
+            device_map="auto",
+            # Add pad token configuration
+            pad_token_id=self.tokenizer.pad_token_id
+        )
 
-    def __init__(self, model: str = 'llama3.1'):
-        self.model = model
+        
         self.system_prompt = """You are a professional video script generator. 
         Generate JSON output strictly following this structure:
         {
@@ -46,7 +78,7 @@ class VideoScriptGenerator:
                 "height": 576
             }]
         }
-          ex1_json = {
+         ex1_json = {
   "topic": "How to Drive a Car",
   "description": "A step-by-step guide on driving a car safely and confidently.",
   "audio_script": [
@@ -160,38 +192,62 @@ class VideoScriptGenerator:
   ]
 }
         Ensure audio and visual timestamps are synchronized.
+        
         """
 
-
     def _generate_content(self, prompt: str) -> Generator[str, None, None]:
-        from ollama import chat
-        buffer = ""
-        stream = chat(
-            model=self.model,
-            messages=[{'role': 'system', 'content': self.system_prompt},
-                      {'role': 'user', 'content': prompt}],
-            stream=True
-        )
+        # Prepare input
+        input_ids = self.tokenizer(
+            prompt, 
+            return_tensors="pt", 
+            padding=True, 
+            truncation=True, 
+            max_length=2048
+        ).to(self.device)
         
-        for chunk in stream:
-            content = chunk['message']['content']
-            buffer += content
-            yield content  # Stream data in real-time
+        # Create a list to store generated chunks
+        generated_chunks = []
+        
+        # Set up streaming
+        def generate_stream():
+            output = self.model.generate(
+                input_ids=input_ids.input_ids,
+                attention_mask=input_ids.attention_mask,
+                max_new_tokens=2048,
+                do_sample=True,
+                temperature=0.7,
+                top_p=0.9,
+                streamer=TextIteratorStreamer(self.tokenizer, skip_prompt=True)
+            )
+            return output
 
-    @modal.method()
+        # Run generation in a thread
+        generation_thread = Thread(target=generate_stream)
+        generation_thread.start()
+        
+        # Yield chunks as they are generated
+        for chunk in TextIteratorStreamer(self.tokenizer, skip_prompt=True):
+            yield chunk
+            generated_chunks.append(chunk)
+        
+        # Wait for thread to complete
+        generation_thread.join()
+        
+        # Return full generated text
+        return ''.join(generated_chunks)
+    @modal.method()   
     def _extract_json(self, raw_text: str) -> Dict:
         try:
             return json.loads(raw_text)
         except json.JSONDecodeError:
             try:
-                json_match = re.search(r'json\n(.*?)\n', raw_text, re.DOTALL)
+                json_match = re.search(r'```json\n(.*?)\n```', raw_text, re.DOTALL)
                 if json_match:
                     return json.loads(json_match.group(1))
                 json_match = re.search(r'\{.*\}', raw_text, re.DOTALL)
                 return json.loads(json_match.group()) if json_match else {}
             except Exception as e:
                 raise ValueError(f"JSON extraction failed: {str(e)}")
-
     @modal.method()
     def generate_script(self, topic: str, duration: int = 60, key_points: Optional[List[str]] = None) -> Generator[str, None, None]:
         prompt = f"""Generate a {duration}-second video script about: {topic}
@@ -200,9 +256,10 @@ class VideoScriptGenerator:
         - Engaging and scientifically accurate narration
         - Cinematic visuals with detailed prompts"""
         
+        buffer = ""
         for chunk in self._generate_content(prompt):
-            yield chunk  # Stream data in real-time
-
+            buffer += chunk
+            yield chunk  # Stream data as it's received
     @modal.method()
     def refine_script(self, existing_script: Dict, feedback: str) -> Generator[str, None, None]:
         prompt = f"""Refine this script based on feedback:
@@ -210,9 +267,10 @@ class VideoScriptGenerator:
         Feedback: {feedback}
         Maintain structure, valid parameters, and timestamp continuity."""
         
+        buffer = ""
         for chunk in self._generate_content(prompt):
+            buffer += chunk
             yield chunk  # Stream refinement updates
-
     @modal.method()
     def save_script(self, script: Dict, filename: str) -> None:
         with open(filename, 'w') as f:
@@ -251,3 +309,4 @@ def main():
             generator.save_script_remote_gen(refined_json, "scripts.json")
     except Exception as e:
         print(f"Script generation failed: {str(e)}")
+        
