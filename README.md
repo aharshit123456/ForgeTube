@@ -11,9 +11,13 @@ The current video assembler, built using **`MoviePy`** (which relies on **`FFmpe
 Both images and audio files are sorted alphabetically before being compiled in sequence. To maintain the correct order, it is recommended to name the files numerically (e.g., `01.jpg`, `01.mp3`, `02.jpg`, `02.mp3`, etc.).
 
 ## Get started 
-Install MoviePy via `pip install moviepy`.
+1. Clone the repo on your system.
+2. create a python virtual environment.
+3. Install the following dependencies 
 
-Install FFmpeg from [here](https://www.ffmpeg.org/download.html)
+> Install MoviePy via `pip install moviepy`.
+> 
+> Install FFmpeg from [here](https://www.ffmpeg.org/download.html)
 
 
 ## Project Structure
@@ -27,10 +31,10 @@ Install FFmpeg from [here](https://www.ffmpeg.org/download.html)
 │   │   └───.wav
 │   ├───font
 │   ├───Images
-│   ├───raw
+│   ├───raw : Contains individual clips so that they can be used for other purposes.
 │   ├───Subtitles
 │   ├───templates : Contains Mock scripts for testing
-│   └───videos
+│   └───videos : Output videos are stored in this folder
 └───Video Assembly : Contains the custom video assembler script
 ```
 
