@@ -1,5 +1,5 @@
 ''' 
-README : The video assembler takes all the images in the Images folder and all the audio files in the Audio folder and concatenates 
+README : The video assembler takes all the images in the Images folder and all the audio files in the Audio folder and the text-to-script from json file and concatenates 
 them into a video. The duration of the picture displayed is same as the duration of the audio for that image. The Images and
 Audio files sorted alphabetically and then compiled in that order. It is recommended to store the Audio and Image files by 
 numbering them.
@@ -9,7 +9,7 @@ Moviepy also supports addition of video clips, so if in future if we have access
 '''
 ''' MAIN THINGS TODO
 1. TODO Implement Subtitles. (Done)
-2. TODO: Read json and extract important parameters from it. (done final )
+2. TODO: Read json and extract important parameters from it. (Done)
 3. TODO: Add support for video clips as well. 
 4. TODO: Add the ability to compile multiple images (stored in a folder) for the one audio stream into a single clip. (Shopno )
 5. TODO: Add transition from clip to clip.
@@ -28,6 +28,7 @@ import os
 from moviepy import ImageClip, concatenate_videoclips, AudioFileClip,TextClip,CompositeVideoClip
 from moviepy.video.tools.subtitles import SubtitlesClip
 import pysrt 
+import json
 
 # Function to Read all the files from a folder.
 def get_files(folder, extensions):
@@ -89,7 +90,80 @@ def create_srt(text_file :str,
     out = f"samples/subtitles/.srt/{outfile_name}.srt"
     subs.save(out)
     return out
-        
+
+'''
+extract_topic_from_json extract() takes json file path as input.
+- Opens the file as read-only and loads the JSON data from it.
+- Extracts the topic from the JSON data.
+
+On success, it returns the topic of the video.
+'''
+def extract_topic_from_json(file_path):
+    try:
+        # Open the JSON file
+        with open(file_path, 'r') as file:
+            # Load JSON data from the file
+            data = json.load(file)
+            
+            # Extract the topic, and audio_script from the JSON data
+            topic = data.get('topic', 'No topic found')
+            
+            return topic
+    except FileNotFoundError:
+        print(f"Error: The file {file_path} was not found.")
+    except json.JSONDecodeError:
+        print(f"Error: The file {file_path} contains invalid JSON.")
+    except Exception as e:
+        print(f"An unexpected error occurred: {e}")
+
+'''
+extract_audio_topic_from_json() takes json file path as input.
+- Opens the file as read-only and loads the JSON data from it.
+- Extracts the audio_script from the JSON data.
+
+On success, it returns audio_script.
+'''
+def extract_audio_from_json(file_path):
+    try:
+        # Open the JSON file
+        with open(file_path, 'r') as file:
+            # Load JSON data from the file
+            data = json.load(file)
+            
+            # Extract the topic, audio_script and visual_script
+            topic = data.get('topic', 'No topic found')
+            audio_script = data.get('audio_script', [])
+            # visual_script = data.get('visual_script', [])
+
+            return audio_script
+    except FileNotFoundError:
+        print(f"Error: The file {file_path} was not found.")
+    except json.JSONDecodeError:
+        print(f"Error: The file {file_path} contains invalid JSON.")
+    except Exception as e:
+        print(f"An unexpected error occurred: {e}")
+
+'''
+json_extract() takes json file path as input.
+- Calls the extract_audio_from_json() to extract the text-to-speech / subtitles from the json file,
+  and the topic of the video.
+
+On success, it returns the subtitles in list format, and the topic.
+'''
+def json_extract(json_path):
+    
+    # Extract parameters from json file
+    audio_script = extract_audio_from_json(json_path)
+    if audio_script:
+        # print("Extracted Audio Parameters:")
+        audio_data = []
+        for item in audio_script:
+            if 'text' in item:
+                text = item['text']
+                audio_data.append(text)
+        return audio_data
+    else:
+        return "No audio script found in the JSON file."
 
 def create_video(image_folder :str, 
                 audio_folder : str,
@@ -121,6 +195,7 @@ def create_video(image_folder :str,
         audio_files = get_files(audio_folder, ('.mp3', '.wav'))
         # sub_files = get_files(sub_folder,(".txt"))
         # replace
+        sub_files = json_extract(sub_folder)
         
         raw_clips = [] 
         subtitles = []
@@ -212,12 +287,14 @@ def create_complete_srt(text_file_folder :str,
     """
     # text_files = get_files(text_file_folder,(".txt"))
     # replace
+    text_files = json_extract(text_file_folder)
     audio_files = get_files(audio_file_folder,(".wav"))
     subs = pysrt.SubRipFile()
     start_time = 0 
     for text_file, audio_file in zip(text_files, audio_files):
-        with open(text_file, "r") as text_file:
-            words = text_file.read().split()
+        # with open(text_file, "r") as text_file:
+            # words = text_file.read().split()
+        words = text_file.split()
         audio_clip = AudioFileClip(audio_file)
         
         # Calculate average word duration
@@ -266,16 +343,19 @@ def create_complete_srt(text_file_folder :str,
 
         
 if __name__ == "__main__":
-    image_folder = "samples/Images/"  
+    image_folder = "samples/Images new/"  
     audio_folder = "samples/Audio/.wav/"  
-    sub_folder = "samples/subtitles/.txt/"
+    # sub_folder = "samples/subtitles/.txt/"
+    sub_folder = "samples/templates/mock_script 3.json"
     font_path = "Samples/font/font.ttf"
     # mp4 or .mkv
-    output_file = "samples/videos/Cats.mp4"
+    # output_file = "samples/videos/Cats.mp4"
+    topic = extract_topic_from_json(sub_folder)
+    output_file = f"samples/videos/{topic}.mp4"
     create_complete_srt(text_file_folder=sub_folder,
                         audio_file_folder=audio_folder,
-                        outfile_name="cats v7",
+                        outfile_name="cats v8",
                         chunk_size = 5)
     
-    # create_video(image_folder, audio_folder,sub_folder,font_path, output_file,with_subtitles=True)
+    create_video(image_folder, audio_folder,sub_folder,font_path, output_file,with_subtitles=True)
     
