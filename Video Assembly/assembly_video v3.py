@@ -8,8 +8,8 @@ Moviepy also supports addition of video clips, so if in future if we have access
 
 '''
 ''' MAIN THINGS TODO
-1. TODO Implement Subtitles.
-2. TODO: Read json and extract important parameters from it. 
+1. TODO Implement Subtitles. (Done)
+2. TODO: Read json and extract important parameters from it. (done final )
 3. TODO: Add support for video clips as well. 
 4. TODO: Add the ability to compile multiple images (stored in a folder) for the one audio stream into a single clip. (Shopno )
 5. TODO: Add transition from clip to clip.
@@ -45,6 +45,13 @@ def get_files(folder, extensions):
         for file in sorted(os.listdir(folder))  
         if file.lower().endswith(extensions)
     ]
+    
+'''
+TODO:
+1. ADD THE JSON EXTRACTION
+2. ADD THE SCRIPT TO THE SUBTITLES
+3. IMPLEMENT THE TRANSITIONS AND THE INTRO OUTRO CLIPS.
+'''
 '''
 FIXME Subtitles timings are same and not correct.
 FIX Create a single srt file with the correct duration of all the subtitles paired with the respective audio file.
@@ -112,7 +119,8 @@ def create_video(image_folder :str,
     try:
         images = get_files(image_folder, ('.jpg', '.png'))
         audio_files = get_files(audio_folder, ('.mp3', '.wav'))
-        sub_files = get_files(sub_folder,(".txt"))
+        # sub_files = get_files(sub_folder,(".txt"))
+        # replace
         
         raw_clips = [] 
         subtitles = []
@@ -202,7 +210,8 @@ def create_complete_srt(text_file_folder :str,
     Returns:
     str: Path to the generated SRT file.
     """
-    text_files = get_files(text_file_folder,(".txt"))
+    # text_files = get_files(text_file_folder,(".txt"))
+    # replace
     audio_files = get_files(audio_file_folder,(".wav"))
     subs = pysrt.SubRipFile()
     start_time = 0 
