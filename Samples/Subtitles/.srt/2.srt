@@ -1,0 +1,12 @@
+1
+00:00:06,190 --> 00:00:08,390
+The playful orange cat leaps
+
+2
+00:00:08,390 --> 00:00:10,590
+joyfully, chasing butterflies, its fur
+
+3
+00:00:10,590 --> 00:00:12,790
+gleaming like a fiery sunset.
+

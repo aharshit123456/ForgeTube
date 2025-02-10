@@ -21,18 +21,18 @@ def extract_audio_visual_from_json(file_path):
     except Exception as e:
         print(f"An unexpected error occurred: {e}")
 
-# Calculating the end timestamp of the subtitle
-def calculate_endtimestamp(start_time, duration):
-    start_dt = datetime.strptime(start_time, "%M:%S")
-    end_dt = start_dt + timedelta(seconds=duration)
-    return end_dt.strftime("%M:%S")
+# # Calculating the end timestamp of the subtitle
+# def calculate_endtimestamp(start_time, duration):
+#     start_dt = datetime.strptime(start_time, "%M:%S")
+#     end_dt = start_dt + timedelta(seconds=duration)
+#     return end_dt.strftime("%M:%S")
 
-# Calculating the duration of the subtitle
-def calculate_duration(text, speed):
-    words_per_minute = 150  # Average speaking rate
-    words = len(text.split())
-    duration = (words / words_per_minute) * 60 / speed
-    return duration
+# # Calculating the duration of the subtitle
+# def calculate_duration(text, speed):
+#     words_per_minute = 150  # Average speaking rate
+#     words = len(text.split())
+#     duration = (words / words_per_minute) * 60 / speed
+#     return duration
         
 def json_extract(json_path):
     
@@ -47,9 +47,9 @@ def json_extract(json_path):
                 text = item['text']
                 timestamp = item['timestamp']
                 speed = item['speed']
-                duration = calculate_duration(text, speed)
-                endtimestamp = calculate_endtimestamp(timestamp, duration)
-                audio_data.append([text, timestamp, endtimestamp])
+                # duration = calculate_duration(text, speed)
+                # endtimestamp = calculate_endtimestamp(timestamp, duration)
+                audio_data.append([text])
                 # print(f"Text: {text}, Start: {timestamp}, End: {endtimestamp}")
         return audio_data
     else:
