@@ -1,16 +1,12 @@
 1
-00:00:39,550 --> 00:00:41,443
-A serene white cat
+00:00:39,550 --> 00:00:41,433
+A serene white cat lounges
 
 2
-00:00:41,443 --> 00:00:43,336
-lounges gracefully, blending into
+00:00:41,433 --> 00:00:44,259
+gracefully, blending into snowy drifts,
 
 3
-00:00:43,336 --> 00:00:45,229
-snowy drifts, eyes reflecting
-
-4
-00:00:45,229 --> 00:00:47,123
-icy blue skies.
+00:00:44,259 --> 00:00:46,505
+eyes reflecting icy blue skies.
 
