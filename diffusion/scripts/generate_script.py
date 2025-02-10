@@ -4,35 +4,33 @@ import torch
 import json
 import os 
 
-# Define the Modal image with required libraries
 image = modal.Image.debian_slim().pip_install(
     "torch", 
     "transformers"
 )
 
-# Create or reference a persistent Modal Volume
-script_volume = modal.Volume.from_name("script_storage", create_if_missing=True)
-
-# Create the Modal app
 app = modal.App(name="huggingface_textgen_app")
 
-@app.cls(image=image, gpu="A100", timeout=3600, volumes={"/mnt/volume": script_volume},secrets=[modal.Secret.from_name("huggingface-secret")])
+@app.cls(image=image, gpu="A100", timeout=3600, secrets=[modal.Secret.from_name("huggingface-secret")])
 class TextGenerator:
-    def __init__(self):  # Fixed method name from _init_ to __init__
+    def __init__(self):  
         """Initialize model, tokenizer, and system prompt."""
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
         model_name = "meta-llama/Llama-3.1-8B"
         self.use_auth_token=os.environ["HF_TOKEN"]
-        # Load tokenizer and model
+        
+        
         self.tokenizer = AutoTokenizer.from_pretrained(model_name)
         self.model = AutoModelForCausalLM.from_pretrained(model_name).to(self.device)
-        
-        # Store system prompt as an instance variable
-        self.system_prompt = """You are a professional video script generator. 
-Generate only and only JSON output strictly following this structure:
+        self.system_prompt = """You are a professional video script generator.
+
+**Important Instructions:**
+1. Output must be **ONLY** valid JSON. Do **NOT** add explanations, reasoning, or extra instructions before or after the JSON.
+2. Start the output with '{' and end it with '}'. Do not include any other text.
+3. Strictly follow this structure:
 {
     "topic": "Topic Name",
-    "description": "description of the video",
+    "description": "Description of the video",
     "audio_script": [{
         "timestamp": "00:00",
         "text": "Narration text",
@@ -49,12 +47,14 @@ Generate only and only JSON output strictly following this structure:
         "style": "realistic|cinematic|hyperrealistic|fantasy|scientific",
         "guidance_scale": 11.0-14.0,
         "steps": 50-100,
-        "seed": 6 digit integer,
+        "seed": 6-digit integer,
         "width": 1024,
         "height": 576
     }]
 }
-example 1:-
+4. Do **NOT** include any other text. If the structure is not followed, the system will reject the output.
+5. Ensure the audio and visual scripts are perfectly synchronized.
+ ex1_json=
 {
   "topic": "Hot Wheels: The Ultimate Collector\u2019s Guide",
   "description": "A comprehensive guide to Hot Wheels history, rare models, and future designs.",
@@ -150,7 +150,8 @@ example 1:-
       "height": 576
     }
   ]
-} ensure audio and visual scripts are in sync
+}
+ensure audio and visual scripts are in sync
 """
 
     @modal.method()
@@ -168,29 +169,33 @@ example 1:-
             temperature=0.7,
             top_p=0.9
         )
+        generated_text = self.tokenizer.decode(outputs[0], skip_special_tokens=True)
 
-        return self.tokenizer.decode(outputs[0], skip_special_tokens=True)
+    # Extract only the JSON part using simple heuristics
+        json_start = generated_text.find('{')
+        json_end = generated_text.rfind('}') + 1
+        clean_output = generated_text[json_start:json_end]
+        return clean_output
     
     @modal.method()
     def save_to_json(self, generated_text: str, filename: str = "generated_script.json") -> None:
-        """Save generated script to a JSON file in Modal Volume."""
+        """Save generated script to a JSON file locally."""
         try:
             parsed_json = json.loads(generated_text)
         except json.JSONDecodeError:
             parsed_json = {"script": generated_text}
         
-        file_path = f"/mnt/volume/{filename}"
+        # Save the file locally
+        file_path = os.path.join(os.getcwd(), filename)
         with open(file_path, 'w') as f:
             json.dump(parsed_json, f, indent=4)
         
-        # Commit changes to make sure the file is saved in the Volume
-        script_volume.commit()
-        print(f"Script saved to {file_path}")
+        print(f"Script saved locally to {file_path}")
 
     @modal.method()
     def read_from_json(self, filename: str = "generated_script.json") -> dict:
-        """Retrieve saved JSON script from Modal Volume."""
-        file_path = f"/mnt/volume/{filename}"
+        """Retrieve saved JSON script from local storage."""
+        file_path = os.path.join(os.getcwd(), filename)
         
         try:
             with open(file_path, 'r') as f:
@@ -199,22 +204,18 @@ example 1:-
         except FileNotFoundError:
             return {"error": "File not found"}
     
-# Entry point to run locally
+
 @app.local_entrypoint()
 def main():
     generator = TextGenerator()
     
     # Provide only the unique user instructions; the system prompt is already set
-    user_prompt = """Generate a 60-second video script about: neural networks
-Key Points: 'Comprehensive coverage'
-- At least 6 segments (5-10 second intervals)
-- Engaging and scientifically accurate narration
-- Cinematic visuals with detailed prompts"""
+    user_prompt = """Generate me a 60 second video on the topic of neural networks"""
     
     result = generator.generate.remote(user_prompt)
     
     print("\nGenerated Text:")
     print(result)
 
-    # Save the generated script to a JSON file in the Volume
-    generator.save_to_json.remote(result, "generated_scripts.json")
+    # Save the generated script locally
+    generator.save_to_json.remote(result, "generated_script.json")
