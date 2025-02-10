@@ -12,7 +12,8 @@ Moviepy also supports addition of video clips, so if in future if we have access
 2. TODO: Read json and extract important parameters from it. (Done)
 3. TODO: Add support for video clips as well. 
 4. TODO: Add the ability to compile multiple images (stored in a folder) for the one audio stream into a single clip. (Shopno )
-5. TODO: Add transition from clip to clip.
+5. TODO: Add transition from clip to clip. (Done)
+6. TODO: Add Intro and Outro Sequence (Done)
 '''
 '''
 Additional TODOs
@@ -29,6 +30,7 @@ from moviepy import ImageClip, concatenate_videoclips, AudioFileClip,TextClip,Co
 from moviepy.video.tools.subtitles import SubtitlesClip
 import pysrt 
 import json
+import random #for random effects
 
 # Function to Read all the files from a folder.
 def get_files(folder, extensions):
@@ -196,6 +198,41 @@ def add_effects(clip):
     print(random_effect)
     return clip.with_effects([random_effect])
 
+def create_intro_clip(background_image_path, 
+                      duration, 
+                      topic,
+                      font_path):
+    """
+    Create an intro video clip with a background image and centered text.
+
+    Parameters:
+        background_image_path (str): Path to the background image.
+        duration (int or float): Duration of the clip in seconds.
+        topic (str): The text to display. Defaults to "Welcome to My Video!".
+        font_path (str): Path to the TrueType font file.
+        font_size (int): Size of the text font.
+        text_color (str): Color of the text.
+
+    Returns:
+        VideoClip: A composite video clip with the background and centered text.
+    """
+    # Create an ImageClip for the background image
+    background = ImageClip(background_image_path, duration=duration)
+
+    # Create a TextClip for the intro text
+    text_clip = TextClip(text=topic,
+                         font_size=70,
+                         color="white",
+                         font=font_path)
+
+    # Position the text in the center and set its duration to match the background
+    text_clip = text_clip.with_position("center").with_duration(duration)
+
+    # Overlay the text clip on top of the background image
+    final_clip = CompositeVideoClip([background, text_clip])
+    
+    return final_clip
+
 def create_video(image_folder :str, 
                 audio_folder : str,
                 sub_folder : str,
@@ -234,7 +271,14 @@ def create_video(image_folder :str,
         dur = 0
         i = 0
         
-            
+        #creating the intro clip and appending it to rawclips
+        path_to_background = "Samples/Intro/intro.jpg"
+        font_path = "Samples/font/font.ttf"
+        json_path = "samples/templates/mock_script.json"
+        topic = extract_topic_from_json(json_path)
+        intro_clip = create_intro_clip(path_to_background, duration=5, topic=topic, font_path=font_path)
+        raw_clips.append(intro_clip)
+        
         # Create different clips
         for img, audio,subtitle_txt in zip(images,audio_files,sub_files):
             audio_clip = AudioFileClip(audio)
@@ -263,8 +307,13 @@ def create_video(image_folder :str,
             image_clip = add_effects(image_clip)
             raw_clips.append(image_clip)
             subtitles.append(subtitle_clip)
-            
-            
+        
+        #creating the outro clip appending it to rawclips  
+        outro_text = "Thank you for watching!"
+        outro_clip = create_intro_clip(path_to_background, duration=5, topic=outro_text, font_path=font_path)
+        raw_clips.append(outro_clip)
+        
+
         #     Store individual clips without subtitles for preview / debug 
         #     clip = None
         #     clip = CompositeVideoClip([img,sub])
