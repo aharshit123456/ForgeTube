@@ -1,312 +1,220 @@
-import json
-import re
-from typing import Dict, List, Optional, Generator
+import modal
 from transformers import AutoModelForCausalLM, AutoTokenizer
 import torch
-import accelerate
-import modal
+import json
+import os 
 
-
-app = modal.App(name="script_test2_app")
-
+# Define the Modal image with required libraries
 image = modal.Image.debian_slim().pip_install(
-    "torch",
-    "transformers",
-    "accelerate"
+    "torch", 
+    "transformers"
 )
 
-@app.cls(
-    image = image,
-    gpu="A10G"  
-)
-class VideoScriptGenerator:
-    """
-    Video script generator using Hugging Face transformers with:
-    - Structured JSON output
-    - Multi-stage generation
-    - Feedback-based refinement
-    - Live script generation
-    """
-    
-    def __init__(self, model_name: str = "meta-llama/Llama-3.1-8B"):
+# Create or reference a persistent Modal Volume
+script_volume = modal.Volume.from_name("script_storage", create_if_missing=True)
+
+# Create the Modal app
+app = modal.App(name="huggingface_textgen_app")
+
+@app.cls(image=image, gpu="A100", timeout=3600, volumes={"/mnt/volume": script_volume},secrets=[modal.Secret.from_name("huggingface-secret")])
+class TextGenerator:
+    def __init__(self):  # Fixed method name from _init_ to __init__
+        """Initialize model, tokenizer, and system prompt."""
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
-    
-        # Load tokenizer with padding settings
-        self.tokenizer = AutoTokenizer.from_pretrained(
-            model_name, 
-            padding_side='left',  # Ensure padding is on the left side
-            truncation_side='left'
-        )
-    
-        # Set pad token if not already set
-        if self.tokenizer.pad_token is None:
-            self.tokenizer.pad_token = self.tokenizer.eos_token
-    
-        # Load model with additional configuration
-        self.model = AutoModelForCausalLM.from_pretrained(
-            model_name,
-            torch_dtype=torch.float16 if self.device == "cuda" else torch.float32,
-            device_map="auto",
-            # Add pad token configuration
-            pad_token_id=self.tokenizer.pad_token_id
-        )
-
+        model_name = "meta-llama/Llama-3.1-8B"
+        self.use_auth_token=os.environ["HF_TOKEN"]
+        # Load tokenizer and model
+        self.tokenizer = AutoTokenizer.from_pretrained(model_name)
+        self.model = AutoModelForCausalLM.from_pretrained(model_name).to(self.device)
         
+        # Store system prompt as an instance variable
         self.system_prompt = """You are a professional video script generator. 
-        Generate JSON output strictly following this structure:
-        {
-            "topic": "Topic Name",
-            "description": "description of the video",
-            "audio_script": [{
-                "timestamp": "00:00",
-                "text": "Narration text",
-                "speaker": "default|narrator_male|narrator_female",
-                "speed": 0.9-1.1,
-                "pitch": 0.9-1.2,
-                "emotion": "neutral|serious|dramatic|mysterious|informative"
-            }],
-            "visual_script": [{
-                "timestamp_start": "00:00",
-                "timestamp_end": "00:05",
-                "prompt": "Detailed Stable Diffusion prompt",
-                "negative_prompt": "Low quality elements to avoid",
-                "style": "realistic|cinematic|hyperrealistic|fantasy|scientific",
-                "guidance_scale": 11.0-14.0,
-                "steps": 50-100,
-                "seed": 6 digit integer,
-                "width": 1024,
-                "height": 576
-            }]
-        }
-         ex1_json = {
-  "topic": "How to Drive a Car",
-  "description": "A step-by-step guide on driving a car safely and confidently.",
+Generate only and only JSON output strictly following this structure:
+{
+    "topic": "Topic Name",
+    "description": "description of the video",
+    "audio_script": [{
+        "timestamp": "00:00",
+        "text": "Narration text",
+        "speaker": "default|narrator_male|narrator_female",
+        "speed": 0.9-1.1,
+        "pitch": 0.9-1.2,
+        "emotion": "neutral|serious|dramatic|mysterious|informative"
+    }],
+    "visual_script": [{
+        "timestamp_start": "00:00",
+        "timestamp_end": "00:05",
+        "prompt": "Detailed Stable Diffusion prompt",
+        "negative_prompt": "Low quality elements to avoid",
+        "style": "realistic|cinematic|hyperrealistic|fantasy|scientific",
+        "guidance_scale": 11.0-14.0,
+        "steps": 50-100,
+        "seed": 6 digit integer,
+        "width": 1024,
+        "height": 576
+    }]
+}
+example 1:-
+{
+  "topic": "Hot Wheels: The Ultimate Collector\u2019s Guide",
+  "description": "A comprehensive guide to Hot Wheels history, rare models, and future designs.",
   "audio_script": [
-      {
+    {
       "timestamp": "00:00",
-      "text": "Driving a car is an essential skill that requires focus, patience, and practice.",
+      "text": "Welcome to the world of Hot Wheels, where speed meets style. From its humble beginnings in the 1960s to its current status as a global phenomenon, Hot Wheels has captured the hearts of millions.",
       "speaker": "narrator_male",
       "speed": 1.0,
       "pitch": 1.0,
-      "emotion": "neutral"
-      },
-      {
+      "emotion": "enthusiastic"
+    },
+    {
       "timestamp": "00:05",
-      "text": "Before starting the car, adjust your seat, mirrors, and ensure your seatbelt is fastened.",
-      "speaker": "narrator_female",
-      "speed": 1.0,
-      "pitch": 1.1,
-      "emotion": "informative"
-      },
-      {
-      "timestamp": "00:15",
-      "text": "Turn the ignition key or press the start button while keeping your foot on the brake.",
+      "text": "In its early days, Hot Wheels was all about innovation. The first cars were designed by none other than the legendary Alec Issigonis, who also created the Mini Cooper.",
       "speaker": "narrator_male",
-      "speed": 0.95,
+      "speed": 0.9,
       "pitch": 1.0,
-      "emotion": "calm"
-      },
-      {
-      "timestamp": "00:20",
-      "text": "Slowly release the brake and gently press the accelerator to move forward.",
+      "emotion": "informative"
+    },
+    {
+      "timestamp": "00:10",
+      "text": "But it's not just about speed; it's also about rare models that make collectors go wild. Like the '66 Chevrolet Corvette, one of the most sought-after Hot Wheels cars ever made.",
       "speaker": "narrator_female",
       "speed": 1.1,
       "pitch": 1.0,
-      "emotion": "guiding"
-      },
-      {
-      "timestamp": "00:25",
-      "text": "Use the steering wheel to navigate while maintaining a steady speed.",
+      "emotion": "excited"
+    },
+    {
+      "timestamp": "00:15",
+      "text": "And let's not forget the future of Hot Wheels! With designers pushing the boundaries of creativity, we can expect to see even more mind-blowing models in the years to come.",
       "speaker": "narrator_male",
       "speed": 1.0,
       "pitch": 1.0,
-      "emotion": "calm"
-      }
+      "emotion": "enthusiastic"
+    },
+    {
+      "timestamp": "00:20",
+      "text": "From its humble beginnings to its current status as a global phenomenon, Hot Wheels has captured the hearts of millions. Join us next time for more fun facts and insights into this beloved toy brand.",
+      "speaker": "narrator_female",
+      "speed": 1.0,
+      "pitch": 1.0,
+      "emotion": "informative"
+    }
   ],
   "visual_script": [
-      {
+    {
       "timestamp_start": "00:00",
       "timestamp_end": "00:05",
-      "prompt": "A person sitting in the driver's seat of a modern car, gripping the steering wheel and looking ahead. The dashboard is visible with standard controls.",
-      "negative_prompt": "blurry, unrealistic interior, poor lighting",
-      "style": "realistic",
-      "guidance_scale": 11.5,
-      "steps": 50,
-      "seed": 123456,
-      "width": 1024,
-      "height": 576,
-      "strength": 0.75
-      },
-      {
-      "timestamp_start": "00:05",
-      "timestamp_end": "00:15",
-      "prompt": "A close-up of a driver's hands adjusting the side mirrors and fastening the seatbelt inside a well-lit car interior.",
-      "negative_prompt": "cluttered background, distorted perspective",
+      "prompt": "A vintage-style illustration of a Hot Wheels car on a track, with the words 'Hot Wheels' emblazoned across the top. The background is a warm, nostalgic color.",
+      "negative_prompt": "blurry, distorted perspective",
       "style": "cinematic",
-      "guidance_scale": 12.0,
+      "guidance_scale": 8.0,
       "steps": 60,
       "seed": 654321,
       "width": 1024,
-      "height": 576,
-      "strength": 0.8
-      },
-      {
-      "timestamp_start": "15:00",
-      "timestamp_end": "00:20",
-      "prompt": "A driver's hand turning the ignition key or pressing the start button in a modern car with a digital dashboard.",
-      "negative_prompt": "low detail, unrealistic lighting, old car model",
-      "style": "hyperrealistic",
-      "guidance_scale": 12.5,
-      "steps": 70,
-      "seed": 789101,
-      "width": 1024,
-      "height": 576,
-      "strength": 0.85
-      },
-      {
-      "timestamp_start": "00:20",
-      "timestamp_end": "00:25",
-      "prompt": "A slow-motion shot of a car's foot pedals as the driver releases the brake and presses the accelerator.",
-      "negative_prompt": "blurry, cartoonish, extreme close-up",
+      "height": 576
+    },
+    {
+      "timestamp_start": "00:05",
+      "timestamp_end": "00:10",
+      "prompt": "A detailed, realistic shot of the '66 Chevrolet Corvette, with its sleek design and bright colors. The background is a deep blue to emphasize the car's presence.",
+      "negative_prompt": "bad lighting, motion blur",
       "style": "cinematic",
-      "guidance_scale": 11.5,
+      "guidance_scale": 8.5,
       "steps": 75,
       "seed": 222333,
       "width": 1024,
-      "height": 576,
-      "strength": 0.8
-      },
-      {
-      "timestamp_start": "00:25",
-      "timestamp_end": "00:30",
-      "prompt": "A wide-angle shot of a car moving smoothly on a suburban road, the driver confidently steering the wheel.",
-      "negative_prompt": "chaotic traffic, bad weather, motion blur",
-      "style": "realistic",
-      "guidance_scale": 13.0,
-      "steps": 50,
+      "height": 576
+    },
+    {
+      "timestamp_start": "00:10",
+      "timestamp_end": "00:15",
+      "prompt": "A futuristic, stylized illustration of a Hot Wheels car in mid-air, with neon lights and bold colors. The background is a deep black to emphasize the car's movement.",
+      "negative_prompt": "blurry, cartoonish",
+      "style": "cinematic",
+      "guidance_scale": 9.0,
+      "steps": 90,
       "seed": 987654,
       "width": 1024,
-      "height": 576,
-      "strength": 0.75
-      }
+      "height": 576
+    },
+    {
+      "timestamp_start": "00:15",
+      "timestamp_end": "00:20",
+      "prompt": "A wide-angle shot of a Hot Wheels car track, with multiple cars racing around the bend. The background is a warm, sunny color to emphasize the fun and excitement.",
+      "negative_prompt": "bad lighting, motion blur",
+      "style": "cinematic",
+      "guidance_scale": 8.0,
+      "steps": 60,
+      "seed": 654321,
+      "width": 1024,
+      "height": 576
+    }
   ]
-}
-        Ensure audio and visual timestamps are synchronized.
-        
-        """
+} ensure audio and visual scripts are in sync
+"""
 
-    def _generate_content(self, prompt: str) -> Generator[str, None, None]:
-        # Prepare input
-        input_ids = self.tokenizer(
-            prompt, 
-            return_tensors="pt", 
-            padding=True, 
-            truncation=True, 
-            max_length=2048
-        ).to(self.device)
-        
-        # Create a list to store generated chunks
-        generated_chunks = []
-        
-        # Set up streaming
-        def generate_stream():
-            output = self.model.generate(
-                input_ids=input_ids.input_ids,
-                attention_mask=input_ids.attention_mask,
-                max_new_tokens=2048,
-                do_sample=True,
-                temperature=0.7,
-                top_p=0.9,
-                streamer=TextIteratorStreamer(self.tokenizer, skip_prompt=True)
-            )
-            return output
+    @modal.method()
+    def generate(self, user_prompt: str, max_length: int = 5000) -> str:
+        """Generate text based on the system prompt combined with user input."""
+        # Use self.system_prompt instead of system_prompt
+        full_prompt = f"{self.system_prompt}\n\n{user_prompt}"
+        inputs = self.tokenizer(full_prompt, return_tensors="pt").to(self.device)
 
-        # Run generation in a thread
-        generation_thread = Thread(target=generate_stream)
-        generation_thread.start()
-        
-        # Yield chunks as they are generated
-        for chunk in TextIteratorStreamer(self.tokenizer, skip_prompt=True):
-            yield chunk
-            generated_chunks.append(chunk)
-        
-        # Wait for thread to complete
-        generation_thread.join()
-        
-        # Return full generated text
-        return ''.join(generated_chunks)
-    @modal.method()   
-    def _extract_json(self, raw_text: str) -> Dict:
-        try:
-            return json.loads(raw_text)
-        except json.JSONDecodeError:
-            try:
-                json_match = re.search(r'```json\n(.*?)\n```', raw_text, re.DOTALL)
-                if json_match:
-                    return json.loads(json_match.group(1))
-                json_match = re.search(r'\{.*\}', raw_text, re.DOTALL)
-                return json.loads(json_match.group()) if json_match else {}
-            except Exception as e:
-                raise ValueError(f"JSON extraction failed: {str(e)}")
-    @modal.method()
-    def generate_script(self, topic: str, duration: int = 60, key_points: Optional[List[str]] = None) -> Generator[str, None, None]:
-        prompt = f"""Generate a {duration}-second video script about: {topic}
-        Key Points: {key_points or 'Comprehensive coverage'}
-        - At least {duration//5} segments (5-second intervals)
-        - Engaging and scientifically accurate narration
-        - Cinematic visuals with detailed prompts"""
-        
-        buffer = ""
-        for chunk in self._generate_content(prompt):
-            buffer += chunk
-            yield chunk  # Stream data as it's received
-    @modal.method()
-    def refine_script(self, existing_script: Dict, feedback: str) -> Generator[str, None, None]:
-        prompt = f"""Refine this script based on feedback:
-        Existing Script: {json.dumps(existing_script, indent=2)}
-        Feedback: {feedback}
-        Maintain structure, valid parameters, and timestamp continuity."""
-        
-        buffer = ""
-        for chunk in self._generate_content(prompt):
-            buffer += chunk
-            yield chunk  # Stream refinement updates
-    @modal.method()
-    def save_script(self, script: Dict, filename: str) -> None:
-        with open(filename, 'w') as f:
-            json.dump(script, f, indent=2)
-
-@app.local_entrypoint()
-def main():
-    generator = VideoScriptGenerator()
-    try:
-        print("Generating Script...")
-        script_chunks = generator.generate_script.remote_gen(
-            topic="Hot Wheels: The Ultimate Collector’s Guide",
-            duration=60,
-            key_points=["History of Hot Wheels", "Rare models", "Future designs"]
+        outputs = self.model.generate(
+            **inputs,
+            max_length=max_length,
+            num_return_sequences=1,
+            do_sample=True,
+            temperature=0.7,
+            top_p=0.9
         )
 
-        full_script = ""
-        for chunk in script_chunks:
-            print(chunk, end="", flush=True)  # Print streaming data in real-time
-            full_script += chunk
-
-        script_json = generator._extract_json_remote_gen(full_script)
-        generator.save_script_remote_gen(script_json, "scripts.json")
-
-        feedback = input("\nProvide feedback (or type 'no' to skip refinement): ")
-        if feedback.lower() != "no":
-            print("Refining Script...")
-            refined_chunks = generator.refine_script_remote_gen(script_json, feedback)
-
-            full_refined_script = ""
-            for chunk in refined_chunks:
-                print(chunk, end="", flush=True)
-                full_refined_script += chunk
-
-            refined_json = generator._extract_json_remote_gen(full_refined_script)
-            generator.save_script_remote_gen(refined_json, "scripts.json")
-    except Exception as e:
-        print(f"Script generation failed: {str(e)}")
+        return self.tokenizer.decode(outputs[0], skip_special_tokens=True)
+    
+    @modal.method()
+    def save_to_json(self, generated_text: str, filename: str = "generated_script.json") -> None:
+        """Save generated script to a JSON file in Modal Volume."""
+        try:
+            parsed_json = json.loads(generated_text)
+        except json.JSONDecodeError:
+            parsed_json = {"script": generated_text}
         
+        file_path = f"/mnt/volume/{filename}"
+        with open(file_path, 'w') as f:
+            json.dump(parsed_json, f, indent=4)
+        
+        # Commit changes to make sure the file is saved in the Volume
+        script_volume.commit()
+        print(f"Script saved to {file_path}")
+
+    @modal.method()
+    def read_from_json(self, filename: str = "generated_script.json") -> dict:
+        """Retrieve saved JSON script from Modal Volume."""
+        file_path = f"/mnt/volume/{filename}"
+        
+        try:
+            with open(file_path, 'r') as f:
+                content = json.load(f)
+            return content
+        except FileNotFoundError:
+            return {"error": "File not found"}
+    
+# Entry point to run locally
+@app.local_entrypoint()
+def main():
+    generator = TextGenerator()
+    
+    # Provide only the unique user instructions; the system prompt is already set
+    user_prompt = """Generate a 60-second video script about: neural networks
+Key Points: 'Comprehensive coverage'
+- At least 6 segments (5-10 second intervals)
+- Engaging and scientifically accurate narration
+- Cinematic visuals with detailed prompts"""
+    
+    result = generator.generate.remote(user_prompt)
+    
+    print("\nGenerated Text:")
+    print(result)
+
+    # Save the generated script to a JSON file in the Volume
+    generator.save_to_json.remote(result, "generated_scripts.json")
