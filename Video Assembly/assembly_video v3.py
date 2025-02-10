@@ -25,7 +25,7 @@ TODO: 5. Allow the script to automatically assign the proper codec with the resp
 TODO: 6. Run proper tests to document when video compiler corruption happens.
 '''
 import os
-from moviepy import ImageClip, concatenate_videoclips, AudioFileClip,TextClip,CompositeVideoClip
+from moviepy import ImageClip, concatenate_videoclips, AudioFileClip,TextClip,CompositeVideoClip, vfx
 from moviepy.video.tools.subtitles import SubtitlesClip
 import pysrt 
 import json
@@ -165,6 +165,37 @@ def json_extract(json_path):
     else:
         return "No audio script found in the JSON file."
 
+def add_effects(clip):
+    """
+    Adds a random effect from a curated list to the video clip.
+    Parameters:
+        clip (VideoClip): Video clip to which effects are to be added.
+    Returns:
+        VideoClip: Video clip with one random effect applied.
+    """
+    list_of_effects = [
+        # Serious
+        [
+            vfx.FadeIn(duration=1),
+            vfx.FadeOut(duration=1)
+        ],
+        # # Dramatic
+        # [
+        #     vfx.CrossFadeIn(duration=1),
+        #     vfx.CrossFadeOut(duration=1)
+        # ],
+        # # Smooth transitions
+        # [
+        #     vfx.SlideIn(duration=1, side="left"),
+        #     vfx.SlideOut(duration=1, side="right")
+        # ]
+    ]
+    
+    # Choose a random effect from a random category
+    random_effect = random.choice(random.choice(list_of_effects))
+    print(random_effect)
+    return clip.with_effects([random_effect])
+
 def create_video(image_folder :str, 
                 audio_folder : str,
                 sub_folder : str,
@@ -229,6 +260,7 @@ def create_video(image_folder :str,
             i += 1
             print(f"Video Clip and Subtitle clip no. {i} successfully created")
             dur += audio_clip.duration
+            image_clip = add_effects(image_clip)
             raw_clips.append(image_clip)
             subtitles.append(subtitle_clip)
             
