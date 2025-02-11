@@ -12,8 +12,8 @@ complete srt, rename it to create srt and implement the function call inside the
 3. TODO: Read json and extract important parameters from it. (Done by Rahul)
 4. TODO: Add support for video clips as well. 
 5. TODO: Add the ability to compile multiple images (stored in a folder) for the one audio stream into a single clip. (Assigned to Shopno )
-6. TODO: Add transition from clip to clip. (Assigned to Shopno)
-7. TODO Add an intro and outro clip. Intro Clip contains : Video title / Short description (if any).
+6. TODO: Add transition from clip to clip. (Done)
+7. TODO Add an intro and outro clip. Intro Clip contains : Video title / Short description (Done).
 Outro Clip contains a text "Made by ForgeTube team", MLSA Logo, Github Link to ForgeTube Main Page.
 '''
 '''
@@ -26,7 +26,7 @@ TODO: 5. Allow the script to automatically assign the proper codec with the resp
 TODO: 6. Run proper tests to document when video compiler corruption happens.
 '''
 import os
-from moviepy import ImageClip, concatenate_videoclips, AudioFileClip,TextClip,CompositeVideoClip
+from moviepy import ImageClip, concatenate_videoclips, AudioFileClip,TextClip,CompositeVideoClip,vfx
 from moviepy.video.tools.subtitles import SubtitlesClip
 import pysrt 
 import json
@@ -98,6 +98,7 @@ def create_srt(text :str,
     subs.save(out)
     return out
 
+
 def extract_topic_from_json(file_path):
     '''
     extract_topic_from_json extract() takes json file path as input.
@@ -122,6 +123,7 @@ def extract_topic_from_json(file_path):
         print(f"Error: The file {file_path} contains invalid JSON.")
     except Exception as e:
         print(f"An unexpected error occurred: {e}")
+
 
 def extract_audio_from_json(file_path):
     '''
@@ -150,6 +152,7 @@ def extract_audio_from_json(file_path):
     except Exception as e:
         print(f"An unexpected error occurred: {e}")
 
+
 def json_extract(json_path):
     '''
     json_extract() takes json file path as input.
@@ -171,6 +174,56 @@ def json_extract(json_path):
         return audio_data
     else:
         raise FileNotFoundError("No audio script found in the JSON file.")
+    
+
+def add_effects(clip):
+    """
+    Adds a effect from a curated list to the video clip.
+    Parameters:
+        clip (VideoClip): Video clip to which effects are to be added.
+    Returns:
+        VideoClip: Video clip with one effect applied.
+    """
+    random_effect =[vfx.FadeIn(duration=1),vfx.FadeOut(duration=1)]    
+    print(random_effect)
+    return clip.with_effects(random_effect)
+
+
+def create_intro_clip(background_image_path, 
+                      duration, 
+                      topic,
+                      font_path):
+    """
+    Create an intro video clip with a background image and centered text.
+
+    Parameters:
+        background_image_path (str): Path to the background image.
+        duration (int or float): Duration of the clip in seconds.
+        topic (str): The text to display. Defaults to "Welcome to My Video!".
+        font_path (str): Path to the TrueType font file.
+        font_size (int): Size of the text font.
+        text_color (str): Color of the text.
+
+    Returns:
+        VideoClip: A composite video clip with the background and centered text.
+    """
+    # Create an ImageClip for the background image
+    background = ImageClip(background_image_path, duration=duration)
+
+    # Create a TextClip for the intro text
+    text_clip = TextClip(text=topic,
+                         font_size=70,
+                         color="white",
+                         font=font_path)
+
+    # Position the text in the center and set its duration to match the background
+    text_clip = text_clip.with_position("center").with_duration(duration)
+
+    # Overlay the text clip on top of the background image
+    final_clip = CompositeVideoClip([background, text_clip])
+    
+    return final_clip
+
 
 def create_video(image_folder :str, 
                 audio_folder : str,
@@ -203,10 +256,17 @@ def create_video(image_folder :str,
         audio_files = get_files(audio_folder, ('.mp3', '.wav'))
         # sub_files = get_files(sub_folder,(".txt"))
         subtitles = json_extract(script_path)
-        raw_clips = [] 
+        raw_clips = []
         audio_durations = []
         Start_duration = 0
-            
+        
+        #creating the intro clip and appending it to rawclips
+        path_to_background = "Samples/Intro/intro.jpg"
+        font_path = "Samples/font/font.ttf"
+        topic = extract_topic_from_json(script_path)
+        intro_clip = create_intro_clip(path_to_background, duration=5, topic=topic, font_path=font_path)
+        raw_clips.append(intro_clip)
+        
         # Create different clips with audio
         for img, audio in zip(images,audio_files):
             audio_clip = AudioFileClip(audio)
@@ -217,8 +277,13 @@ def create_video(image_folder :str,
             audio_durations.append(audio_clip.duration)
             print(f"Video Clip no. {images.index(img)+1} successfully created")
             Start_duration += audio_clip.duration
+            image_clip = add_effects(image_clip)
             raw_clips.append(image_clip)            
-            
+        
+        #creating the outro clip appending it to rawclips  
+        outro_text = "Thank you for watching! Made by ForgeTube team."
+        outro_clip = create_intro_clip(path_to_background, duration=5, topic=outro_text, font_path=font_path)
+        raw_clips.append(outro_clip)
         #     Store individual clips without subtitles for preview / debug 
         #     clip = None
         #     clip = CompositeVideoClip(img)
@@ -242,7 +307,7 @@ def create_video(image_folder :str,
         FIX: Make it such that concatenation is done only on the image clips and composite video clip is added later on with the 
         '''
         if with_subtitles == True:
-            Start_duration = 0
+            Start_duration = 5
             subtitle_clips = []
             chunk = ''
             chunks = []
@@ -292,6 +357,7 @@ def create_video(image_folder :str,
         if not subtitles:
             raise FileNotFoundError("No subtitles found in the specified json. ")
         
+        
 def create_complete_srt(text_file_folder :str, 
             audio_file_folder : str, 
             outfile_name:str,
@@ -312,7 +378,7 @@ def create_complete_srt(text_file_folder :str,
     text_files = json_extract(text_file_folder)
     audio_files = get_files(audio_file_folder,(".wav"))
     subs = pysrt.SubRipFile()
-    start_time = 0 
+    start_time = 5 
     for text_file, audio_file in zip(text_files, audio_files):
         # with open(text_file, "r") as text_file:
             # words = text_file.read().split()
@@ -351,15 +417,15 @@ def create_complete_srt(text_file_folder :str,
 
         
 if __name__ == "__main__":
-    image_folder = "samples/Images new/"  
-    audio_folder = "samples/Audio/.wav/"  
-    script_path = "samples/templates/mock_script 3.json"
+    image_folder = "Samples/Images new/"  
+    audio_folder = "Samples/Audio/.wav/"  
+    script_path = "Samples/templates/mock_script 3.json" 
     font_path = "Samples/font/font.ttf"
     # sub_folder = "samples/subtitles/.txt/"
     # mp4 or .mkv
     # output_file = "samples/videos/Cats.mp4"
     topic = extract_topic_from_json(script_path)
-    output_file = f"samples/videos/{topic}.mp4"
+    output_file = f"Samples/Videos/Cats1.mp4"
     create_complete_srt(text_file_folder=script_path,
                         audio_file_folder=audio_folder,
                         outfile_name="cats v8",
