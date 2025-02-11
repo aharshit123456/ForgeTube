@@ -6,14 +6,12 @@ numbering them.
 '''
 ''' MAIN THINGS TODO
 1. TODO: Main Video Assembly Engine (Done by Souryabrata)
-2. TODO: Implement Subtitles. (Done by Souryabrata)
-3. TODO: Remove the old create_srt function and test it properly against the json extract function and incorporate all the changes to
-complete srt, rename it to create srt and implement the function call inside the create_video function
+2. TODO: Implement Subtitles, via video embedding and .srt file generation. (Done by Souryabrata)
 3. TODO: Read json and extract important parameters from it. (Done by Rahul)
-4. TODO: Add support for video clips as well. 
+4. TODO: Add support for video clips as well. (Assigned to Shopno)
 5. TODO: Add the ability to compile multiple images (stored in a folder) for the one audio stream into a single clip. (Assigned to Shopno )
-6. TODO: Add transition from clip to clip. (Done)
-7. TODO Add an intro and outro clip. Intro Clip contains : Video title / Short description (Done).
+6. TODO: Add transition from clip to clip. (Done by Shopno)
+7. TODO Add an intro and outro clip. Intro Clip contains : Video title / Short description (Done by Shopno).
 Outro Clip contains a text "Made by ForgeTube team", MLSA Logo, Github Link to ForgeTube Main Page.
 '''
 '''
@@ -254,13 +252,12 @@ def create_video(image_folder :str,
     try:
         images = get_files(image_folder, ('.jpg', '.png'))
         audio_files = get_files(audio_folder, ('.mp3', '.wav'))
-        # sub_files = get_files(sub_folder,(".txt"))
         subtitles = json_extract(script_path)
         raw_clips = []
         audio_durations = []
         Start_duration = 0
         
-        #creating the intro clip and appending it to rawclips
+        #creating the intro clip and appending it to raw clips
         path_to_background = "Samples/Intro/intro.jpg"
         font_path = "Samples/font/font.ttf"
         topic = extract_topic_from_json(script_path)
@@ -280,7 +277,7 @@ def create_video(image_folder :str,
             image_clip = add_effects(image_clip)
             raw_clips.append(image_clip)            
         
-        #creating the outro clip appending it to rawclips  
+        #creating the outro clip appending it to raw clips  
         outro_text = "Thank you for watching! Made by ForgeTube team."
         outro_clip = create_intro_clip(path_to_background, duration=5, topic=outro_text, font_path=font_path)
         raw_clips.append(outro_clip)
@@ -340,13 +337,14 @@ def create_video(image_folder :str,
                                         horizontal_align = "center"
                                         ).with_duration(duration).with_start(Start_duration).with_position('bottom')
                 subtitle_clips.append(subtitle_clip)
-                print(f"Subtitle Clip no. {chunks.index(subtitle)} successfully created")
+                # For Debugging :
+                # print(f"Subtitle Clip no. {chunks.index(subtitle)+1} successfully created")
                 Start_duration += duration
             subtitle_clips.insert(0,video)
             final_video = CompositeVideoClip(subtitle_clips)
         else:
             final_video = video
-        final_video.write_videofile(output_file, fps=1,threads = os.cpu_count())
+        final_video.write_videofile(output_file, fps=24,threads = os.cpu_count())
         print(f"Video created successfully: {output_file}")
         
     except FileNotFoundError:
@@ -358,78 +356,87 @@ def create_video(image_folder :str,
             raise FileNotFoundError("No subtitles found in the specified json. ")
         
         
-def create_complete_srt(text_file_folder :str, 
+def create_complete_srt(script_folder :str, 
             audio_file_folder : str, 
-            outfile_name:str,
-            chunk_size=5):
+            outfile_path:str,
+            chunk_size=10):
     """
-    Creates an SRT file from text and audio files in the given folders.
+    Creates an SRT file by extracting subtitles from the script_folder using `json_extract` function and audio files 
+    from the `audio_file` folder. Segments the subtitles into the specified chunk size and maps the duration of the chunk to the 
+    proportion of the length of the chunk.
     Parameters:
-    text_file_folder (str): Path to the folder containing text files.
+    script_folder (str): Path to the folder containing script json file.
     audio_file_folder (str): Path to the folder containing audio files.
-    outfile_name (str): Name of the output SRT file (without extension).
-    chunk_size (str): Number of words per subtitle chunk. If set to `sentence` , chunks are automatically segmented sentence wise.
-
-    Returns:
-    str: Path to the generated SRT file.
+    outfile_path (str): Path or Name of the SRT file given in output.
+    chunk_size (str): Number of words per subtitle chunk.
     """
-    # text_files = get_files(text_file_folder,(".txt"))
-    # replace
-    text_files = json_extract(text_file_folder)
-    audio_files = get_files(audio_file_folder,(".wav"))
+    
+    script = json_extract(script_folder)
+    audio_files = get_files(audio_file_folder,(".wav",".mp3"))
+    audio_clips = []
+    [audio_clips.append(AudioFileClip(x)) for x in audio_files]
     subs = pysrt.SubRipFile()
     start_time = 5 
-    for text_file, audio_file in zip(text_files, audio_files):
-        # with open(text_file, "r") as text_file:
-            # words = text_file.read().split()
-        words = text_file.split()
-        audio_clip = AudioFileClip(audio_file)
-        
-        # Calculate average word duration
-        word_count = len(words)
-        word_duration = (audio_clip.duration / word_count)  # Seconds per word
-        # char_duration = char_count / audio_clip.duration #Characters per second
-        if chunk_size != 0:
-            for i in range(0, word_count, chunk_size):
-                end_time = start_time + (  chunk_size * word_duration)
+    chunk = ''
+    chunk_duration = 0
+    end_time = 5
+    n = 1
+    for text,audio_clip in zip(script,audio_clips):
+        duration = audio_clip.duration
+        words = text.split()
+        if len(words) > chunk_size:
+            for i in range(0,len(words),chunk_size):
+                chunk = " ".join(words[i : (i+chunk_size if i < len(words)-1 else len(words)-1)])
+                chunk_duration = duration * (len(chunk.split())/len(words))
+                end_time += chunk_duration
                 subtitle = pysrt.SubRipItem(
-                    index=len(subs) + 1,
+                    index=n,
                     start=pysrt.SubRipTime(seconds=start_time),
                     end=pysrt.SubRipTime(seconds=end_time),
-                    text=" ".join(words[i:i + chunk_size])
+                    text=chunk
                 )
                 subs.append(subtitle)
+                # For Debugging:
+                # print(f"Subtitle no. {n} added successfully.")
+                # print(f"Start : {start_time}")
+                # print(f"End : {end_time}")
                 start_time = end_time
-        elif chunk_size == 0:
-            chunk_size = word_count
-            end_time = start_time + audio_clip.duration
+                n+=1
+        else:
+            chunk = text
+            chunk_duration = duration
+            end_time += chunk_duration
             subtitle = pysrt.SubRipItem(
-                    index=len(subs) + 1,
-                    start=pysrt.SubRipTime(seconds=start_time),
-                    end=pysrt.SubRipTime(seconds=end_time),
-                    text=" ".join(words)
-                )
+                index=len(subs) + 1,
+                start=pysrt.SubRipTime(seconds=start_time),
+                end=pysrt.SubRipTime(seconds=end_time),
+                text=chunk
+            )
             subs.append(subtitle)
+            # For Debugging:
+            # print(f"Subtitle no. {n} added successfully.")
+            # print(f"Start : {start_time}")
+            # print(f"End : {end_time}")
             start_time = end_time
-    out = f"./samples/subtitles/.srt/{outfile_name}.srt"
-    subs.save(out)
-    print(f"File saved successfully at {out}")
+            n+=1
+            
+    subs.save(outfile_path)
+    print(f"File saved successfully at {outfile_path}")
 
         
 if __name__ == "__main__":
-    image_folder = "Samples/Images new/"  
-    audio_folder = "Samples/Audio/.wav/"  
-    script_path = "Samples/templates/mock_script 3.json" 
+    image_folder = "Samples/Images/brain rot"  
+    audio_folder = "Samples/Audio/brain rot/"  
+    script_path = "Samples/templates/brain_rot.json" 
     font_path = "Samples/font/font.ttf"
-    # sub_folder = "samples/subtitles/.txt/"
-    # mp4 or .mkv
-    # output_file = "samples/videos/Cats.mp4"
+    sub_output_file = "samples/subtitles/.srt/brain_rot.srt"
     topic = extract_topic_from_json(script_path)
-    output_file = f"Samples/Videos/Cats1.mp4"
-    create_complete_srt(text_file_folder=script_path,
+    output_file = f"Samples/Videos/brain_rot.mp4"
+    
+    create_complete_srt(script_folder=script_path,
                         audio_file_folder=audio_folder,
-                        outfile_name="cats v8",
-                        chunk_size = 5)
+                        outfile_path=sub_output_file,
+                        chunk_size = 10)
     
     create_video(image_folder, audio_folder,script_path,font_path, output_file,with_subtitles=True)
     
