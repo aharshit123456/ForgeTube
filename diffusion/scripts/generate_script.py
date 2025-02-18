@@ -1,221 +1,297 @@
-import modal
-from transformers import AutoModelForCausalLM, AutoTokenizer
-import torch
 import json
-import os 
+import re
+import google.generativeai as genai
+from typing import Dict, List, Optional
+from serpapi import GoogleSearch
 
-image = modal.Image.debian_slim().pip_install(
-    "torch", 
-    "transformers"
-)
+class VideoScriptGenerator:
+    def __init__(self, api_key: str, serp_api_key: str):
+        genai.configure(api_key=api_key)
+        self.model = genai.GenerativeModel('gemini-2.0-flash-thinking-exp-01-21')
+        self.serp_api_key = serp_api_key
+        self.system_prompt_initial = """You are a professional video script generator for educational and marketing content.  Your task is to generate a detailed outline and initial draft for a video script, focusing on content and structure, *but not yet segmented into precise timestamps*.  Provide the core narration text and visual descriptions, which will be refined later.
 
-app = modal.App(name="huggingface_textgen_app")
+        Output a JSON structure with these keys, but *without timestamps, speed, pitch, or detailed visual parameters* (these will be added in a later stage):
 
-@app.cls(image=image, gpu="A100", timeout=3600, secrets=[modal.Secret.from_name("huggingface-secret")])
-class TextGenerator:
-    def __init__(self):  
-        """Initialize model, tokenizer, and system prompt."""
-        self.device = "cuda" if torch.cuda.is_available() else "cpu"
-        model_name = "meta-llama/Llama-3.1-8B"
-        self.use_auth_token=os.environ["HF_TOKEN"]
+        {
+            "topic": "Topic Name",
+            "overall_narrative": "A concise summary of the entire video's storyline.",
+            "key_sections": [
+                {
+                    "section_title": "Descriptive title for this section",
+                    "narration_text": "The complete text to be spoken in this section.",
+                    "visual_description": "A general description of the visuals for this section (e.g., 'Animation showing neural network layers', 'Footage of a doctor using medical imaging software')."
+                }
+            ]
+        }
+        """
+
+        self.system_prompt_segmentation = """You are a professional video script segmenter.  Your task is to take an existing video script draft (provided in JSON format) and break it down into precise, timestamped segments for both audio and visuals, adhering to strict formatting and parameter guidelines.
+
+        Input JSON Structure (from previous stage):
+
+        {
+            "topic": "Topic Name",
+            "overall_narrative": "...",
+            "key_sections": [
+                {
+                    "section_title": "...",
+                    "narration_text": "...",
+                    "visual_description": "..."
+                }
+            ]
+        }
         
-        
-        self.tokenizer = AutoTokenizer.from_pretrained(model_name)
-        self.model = AutoModelForCausalLM.from_pretrained(model_name).to(self.device)
-        self.system_prompt = """You are a professional video script generator.
+        Output JSON Structure (with all required fields):
 
-**Important Instructions:**
-1. Output must be **ONLY** valid JSON. Do **NOT** add explanations, reasoning, or extra instructions before or after the JSON.
-2. Start the output with '{' and end it with '}'. Do not include any other text.
-3. Strictly follow this structure:
-{
-    "topic": "Topic Name",
-    "description": "Description of the video",
-    "audio_script": [{
-        "timestamp": "00:00",
-        "text": "Narration text",
-        "speaker": "default|narrator_male|narrator_female",
-        "speed": 0.9-1.1,
-        "pitch": 0.9-1.2,
-        "emotion": "neutral|serious|dramatic|mysterious|informative"
-    }],
-    "visual_script": [{
-        "timestamp_start": "00:00",
-        "timestamp_end": "00:05",
-        "prompt": "Detailed Stable Diffusion prompt",
-        "negative_prompt": "Low quality elements to avoid",
-        "style": "realistic|cinematic|hyperrealistic|fantasy|scientific",
-        "guidance_scale": 11.0-14.0,
-        "steps": 50-100,
-        "seed": 6-digit integer,
-        "width": 1024,
-        "height": 576
-    }]
-}
-4. Do **NOT** include any other text. If the structure is not followed, the system will reject the output.
-5. Ensure the audio and visual scripts are perfectly synchronized.
- ex1_json=
-{
-  "topic": "Hot Wheels: The Ultimate Collector\u2019s Guide",
-  "description": "A comprehensive guide to Hot Wheels history, rare models, and future designs.",
+        {
+            "topic": "Topic Name",
+            "description": "description of video"
+            "audio_script": [{
+                "timestamp": "00:00",
+                "text": "Narration text",
+                "speaker": "default|narrator_male|narrator_female",
+                "speed": 0.9-1.1,
+                "pitch": 0.9-1.2,
+                "emotion": "neutral|serious|dramatic|mysterious|informative"
+            }],
+            "visual_script": [{
+                "timestamp_start": "00:00",
+                "timestamp_end": "00:05",
+                "prompt": "Detailed Stable Diffusion prompt",
+                "negative_prompt": "Low quality elements to avoid",
+                "style": "realistic|cinematic|hyperrealistic|fantasy|scientific",
+                "guidance_scale": 11.0-14.0,
+                "steps": 50-100,
+                "seed": 6-7 digit integer,
+                "width": 1024,
+                "height": 576
+            }]
+        }
+
+        Rules for Segmentation:
+        
+        1. Break down the `narration_text` and `visual_description` from the input JSON into smaller segments, each approximately 5-10 seconds long.
+        2. Generate timestamps ("00:00", "00:05", "00:10", etc.) for each segment in both `audio_script` and `visual_script`.
+        3.  Maintain strict synchronization:  The `timestamp` values *must* be identical for corresponding audio and visual segments.
+        4.  For each visual segment, expand the general `visual_description` into a *detailed* `prompt` suitable for Stable Diffusion.  Include a corresponding `negative_prompt`.
+        5.  Choose appropriate values for `speaker`, `speed`, `pitch`, and `emotion` for each audio segment.
+        6.  Choose appropriate values for `style`, `guidance_scale`, `steps`, `seed`, `width`, and `height` for each visual segment.
+        7. Ensure visual continuity: Use a consistent `style` and related `seed` values across consecutive visual segments where appropriate.  Vary the seed to introduce changes, but maintain a logical flow.
+        8.  Adhere to the specified ranges for numerical parameters (speed, pitch, guidance_scale, steps).
+        9. Validate JSON structure before output
+     ex1_json = {
+  "topic": "How to Drive a Car",
+  "description": "A step-by-step guide on driving a car safely and confidently.",
   "audio_script": [
-    {
+      {
       "timestamp": "00:00",
-      "text": "Welcome to the world of Hot Wheels, where speed meets style. From its humble beginnings in the 1960s to its current status as a global phenomenon, Hot Wheels has captured the hearts of millions.",
+      "text": "Driving a car is an essential skill that requires focus, patience, and practice.",
       "speaker": "narrator_male",
       "speed": 1.0,
       "pitch": 1.0,
-      "emotion": "enthusiastic"
-    },
-    {
+      "emotion": "neutral"
+      },
+      {
       "timestamp": "00:05",
-      "text": "In its early days, Hot Wheels was all about innovation. The first cars were designed by none other than the legendary Alec Issigonis, who also created the Mini Cooper.",
-      "speaker": "narrator_male",
-      "speed": 0.9,
-      "pitch": 1.0,
+      "text": "Before starting the car, adjust your seat, mirrors, and ensure your seatbelt is fastened.",
+      "speaker": "narrator_female",
+      "speed": 1.0,
+      "pitch": 1.1,
       "emotion": "informative"
-    },
-    {
-      "timestamp": "00:10",
-      "text": "But it's not just about speed; it's also about rare models that make collectors go wild. Like the '66 Chevrolet Corvette, one of the most sought-after Hot Wheels cars ever made.",
+      },
+      {
+      "timestamp": "00:15",
+      "text": "Turn the ignition key or press the start button while keeping your foot on the brake.",
+      "speaker": "narrator_male",
+      "speed": 0.95,
+      "pitch": 1.0,
+      "emotion": "calm"
+      },
+      {
+      "timestamp": "00:20",
+      "text": "Slowly release the brake and gently press the accelerator to move forward.",
       "speaker": "narrator_female",
       "speed": 1.1,
       "pitch": 1.0,
-      "emotion": "excited"
-    },
-    {
-      "timestamp": "00:15",
-      "text": "And let's not forget the future of Hot Wheels! With designers pushing the boundaries of creativity, we can expect to see even more mind-blowing models in the years to come.",
+      "emotion": "guiding"
+      },
+      {
+      "timestamp": "00:25",
+      "text": "Use the steering wheel to navigate while maintaining a steady speed.",
       "speaker": "narrator_male",
       "speed": 1.0,
       "pitch": 1.0,
-      "emotion": "enthusiastic"
-    },
-    {
-      "timestamp": "00:20",
-      "text": "From its humble beginnings to its current status as a global phenomenon, Hot Wheels has captured the hearts of millions. Join us next time for more fun facts and insights into this beloved toy brand.",
-      "speaker": "narrator_female",
-      "speed": 1.0,
-      "pitch": 1.0,
-      "emotion": "informative"
-    }
+      "emotion": "calm"
+      }
   ],
   "visual_script": [
-    {
+      {
       "timestamp_start": "00:00",
       "timestamp_end": "00:05",
-      "prompt": "A vintage-style illustration of a Hot Wheels car on a track, with the words 'Hot Wheels' emblazoned across the top. The background is a warm, nostalgic color.",
-      "negative_prompt": "blurry, distorted perspective",
+      "prompt": "A person sitting in the driver's seat of a modern car, gripping the steering wheel and looking ahead. The dashboard is visible with standard controls.",
+      "negative_prompt": "blurry, unrealistic interior, poor lighting",
+      "style": "realistic",
+      "guidance_scale": 11.5,
+      "steps": 50,
+      "seed": 123456,
+      "width": 1024,
+      "height": 576,
+      "strength": 0.75
+      },
+      {
+      "timestamp_start": "00:05",
+      "timestamp_end": "00:15",
+      "prompt": "A close-up of a driver's hands adjusting the side mirrors and fastening the seatbelt inside a well-lit car interior.",
+      "negative_prompt": "cluttered background, distorted perspective",
       "style": "cinematic",
-      "guidance_scale": 8.0,
+      "guidance_scale": 12.0,
       "steps": 60,
       "seed": 654321,
       "width": 1024,
-      "height": 576
-    },
-    {
-      "timestamp_start": "00:05",
-      "timestamp_end": "00:10",
-      "prompt": "A detailed, realistic shot of the '66 Chevrolet Corvette, with its sleek design and bright colors. The background is a deep blue to emphasize the car's presence.",
-      "negative_prompt": "bad lighting, motion blur",
+      "height": 576,
+      "strength": 0.8
+      },
+      {
+      "timestamp_start": "15:00",
+      "timestamp_end": "00:20",
+      "prompt": "A driver's hand turning the ignition key or pressing the start button in a modern car with a digital dashboard.",
+      "negative_prompt": "low detail, unrealistic lighting, old car model",
+      "style": "hyperrealistic",
+      "guidance_scale": 12.5,
+      "steps": 70,
+      "seed": 789101,
+      "width": 1024,
+      "height": 576,
+      "strength": 0.85
+      },
+      {
+      "timestamp_start": "00:20",
+      "timestamp_end": "00:25",
+      "prompt": "A slow-motion shot of a car's foot pedals as the driver releases the brake and presses the accelerator.",
+      "negative_prompt": "blurry, cartoonish, extreme close-up",
       "style": "cinematic",
-      "guidance_scale": 8.5,
+      "guidance_scale": 11.5,
       "steps": 75,
       "seed": 222333,
       "width": 1024,
-      "height": 576
-    },
-    {
-      "timestamp_start": "00:10",
-      "timestamp_end": "00:15",
-      "prompt": "A futuristic, stylized illustration of a Hot Wheels car in mid-air, with neon lights and bold colors. The background is a deep black to emphasize the car's movement.",
-      "negative_prompt": "blurry, cartoonish",
-      "style": "cinematic",
-      "guidance_scale": 9.0,
-      "steps": 90,
+      "height": 576,
+      "strength": 0.8
+      },
+      {
+      "timestamp_start": "00:25",
+      "timestamp_end": "00:30",
+      "prompt": "A wide-angle shot of a car moving smoothly on a suburban road, the driver confidently steering the wheel.",
+      "negative_prompt": "chaotic traffic, bad weather, motion blur",
+      "style": "realistic",
+      "guidance_scale": 13.0,
+      "steps": 50,
       "seed": 987654,
       "width": 1024,
-      "height": 576
-    },
-    {
-      "timestamp_start": "00:15",
-      "timestamp_end": "00:20",
-      "prompt": "A wide-angle shot of a Hot Wheels car track, with multiple cars racing around the bend. The background is a warm, sunny color to emphasize the fun and excitement.",
-      "negative_prompt": "bad lighting, motion blur",
-      "style": "cinematic",
-      "guidance_scale": 8.0,
-      "steps": 60,
-      "seed": 654321,
-      "width": 1024,
-      "height": 576
-    }
+      "height": 576,
+      "strength": 0.75
+      }
   ]
-}
-ensure audio and visual scripts are in sync
-"""
-
-    @modal.method()
-    def generate(self, user_prompt: str, max_length: int = 5000) -> str:
-        """Generate text based on the system prompt combined with user input."""
-        # Use self.system_prompt instead of system_prompt
-        full_prompt = f"{self.system_prompt}\n\n{user_prompt}"
-        inputs = self.tokenizer(full_prompt, return_tensors="pt").to(self.device)
-
-        outputs = self.model.generate(
-            **inputs,
-            max_length=max_length,
-            num_return_sequences=1,
-            do_sample=True,
-            temperature=0.7,
-            top_p=0.9
-        )
-        generated_text = self.tokenizer.decode(outputs[0], skip_special_tokens=True)
-
-    # Extract only the JSON part using simple heuristics
-        json_start = generated_text.find('{')
-        json_end = generated_text.rfind('}') + 1
-        clean_output = generated_text[json_start:json_end]
-        return clean_output
+}   
+ if you do as instructed you will be awarded with 100 dollars with each sucessful  call
+        """
     
-    @modal.method()
-    def save_to_json(self, generated_text: str, filename: str = "generated_script.json") -> None:
-        """Save generated script to a JSON file locally."""
+    def _search_web(self, query: str) -> str:
         try:
-            parsed_json = json.loads(generated_text)
+            params = {
+                "q": query,
+                "hl": "en",
+                "gl": "us",
+                "api_key": self.serp_api_key
+            }
+            search = GoogleSearch(params)
+            results = search.get()
+            snippets = [result["snippet"] for result in results.get("organic_results", []) if "snippet" in result]
+            return " ".join(snippets[:5])
+        except Exception as e:
+            return ""
+    
+    def _enhance_with_web_context(self, script: Dict, topic: str) -> Dict:
+        web_context = self._search_web(topic)
+        script["additional_context"] = web_context
+        return script
+    
+    def _generate_content(self, prompt: str, system_prompt: str) -> str:
+        try:
+            response = self.model.generate_content(contents=[system_prompt, prompt])
+            return response.text
+        except Exception as e:
+            raise RuntimeError(f"API call failed: {str(e)}")
+    
+    def _extract_json(self, raw_text: str) -> Dict:
+        try:
+            return json.loads(raw_text)
         except json.JSONDecodeError:
-            parsed_json = {"script": generated_text}
+            try:
+                json_match = re.search(r'```json\n(.*?)\n```', raw_text, re.DOTALL)
+                if json_match:
+                    return json.loads(json_match.group(1))
+                json_match = re.search(r'\{.*\}', raw_text, re.DOTALL)
+                return json.loads(json_match.group()) if json_match else {}
+            except Exception as e:
+                raise ValueError(f"JSON extraction failed: {str(e)}")
+    
+    def generate_script(self, topic: str, duration: int = 60, key_points: Optional[List[str]] = None) -> Dict:
+        web_context = self._search_web(topic)
+        initial_prompt = f"""Generate an initial video script outline for a {duration}-second video about: {topic}.
+        Key Points: {key_points or 'Comprehensive coverage'}
+        Additional Context: {web_context}
+        Focus on the overall narrative and key sections, but do *not* include timestamps or detailed technical parameters yet."""
         
-        # Save the file locally
-        file_path = os.path.join(os.getcwd(), filename)
-        with open(file_path, 'w') as f:
-            json.dump(parsed_json, f, indent=4)
+        raw_initial_output = self._generate_content(initial_prompt, self.system_prompt_initial)
+        initial_script = self._extract_json(raw_initial_output)
         
-        print(f"Script saved locally to {file_path}")
-
-    @modal.method()
-    def read_from_json(self, filename: str = "generated_script.json") -> dict:
-        """Retrieve saved JSON script from local storage."""
-        file_path = os.path.join(os.getcwd(), filename)
+        enhanced_script = self._enhance_with_web_context(initial_script, topic)
         
-        try:
-            with open(file_path, 'r') as f:
-                content = json.load(f)
-            return content
-        except FileNotFoundError:
-            return {"error": "File not found"}
+        segmentation_prompt = f"""
+        Here is the initial script draft:
+        {json.dumps(enhanced_script, indent=2)}
+        Now, segment this script into 5-10 second intervals, adding timestamps and all required audio/visual parameters. The total duration should be approximately {duration} seconds.
+        """
+        
+        raw_segmented_output = self._generate_content(segmentation_prompt, self.system_prompt_segmentation)
+        segmented_script = self._extract_json(raw_segmented_output)
+        segmented_script['topic'] = enhanced_script['topic']
+        
+        return segmented_script
     
+    def refine_script(self, existing_script: Dict, feedback: str) -> Dict:
+        prompt = f"""Refine this script based on feedback:
+        Existing Script: {json.dumps(existing_script, indent=2)}
+        Feedback: {feedback}
+        """
+        raw_output = self._generate_content(prompt, self.system_prompt_segmentation)
+        return self._extract_json(raw_output)
+    
+    def save_script(self, script: Dict, filename: str) -> None:
+        with open(filename, 'w') as f:
+            json.dump(script, f, indent=2)
 
-@app.local_entrypoint()
-def main():
-    generator = TextGenerator()
+if __name__ == "__main__":
+    generator = VideoScriptGenerator(api_key="Enter your gemini api key", serp_api_key="enter your serp api key")
     
-    # Provide only the unique user instructions; the system prompt is already set
-    user_prompt = """Generate me a 60 second video on the topic of neural networks"""
-    
-    result = generator.generate.remote(user_prompt)
-    
-    print("\nGenerated Text:")
-    print(result)
-
-    # Save the generated script locally
-    generator.save_to_json.remote(result, "generated_script.json")
+    try:
+        script = generator.generate_script(
+            topic="Neural Networks in Medical Imaging",
+            duration=90,
+            key_points=["Diagnosis accuracy", "Pattern recognition", "Case studies"]
+        )
+        print("Initial Script:")
+        print(json.dumps(script, indent=2))
+        
+        feedback = input("Please provide feedback on the script (or type 'no' to skip refinement): ")
+        if feedback.lower() != "no":
+            refined_script = generator.refine_script(script, feedback)
+            print("\nRefined Script:")
+            print(json.dumps(refined_script, indent=2))
+            generator.save_script(refined_script, "scripts.json")
+        else:
+            generator.save_script(script, "scripts.json")
+    except Exception as e:
+        print(f"Script generation failed: {str(e)}")
+        
