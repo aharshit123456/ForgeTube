@@ -183,7 +183,7 @@ def add_effects(clip):
         VideoClip: Video clip with one effect applied.
     """
     random_effect =[vfx.FadeIn(duration=1),vfx.FadeOut(duration=1)]    
-    print(random_effect)
+    # print(random_effect)
     return clip.with_effects(random_effect)
 
 
@@ -210,9 +210,9 @@ def create_intro_clip(background_image_path,
 
     # Create a TextClip for the intro text
     text_clip = TextClip(text=topic,
-                         font_size=70,
-                         color="white",
-                         font=font_path)
+                        font_size=70,
+                        color="white",
+                        font=font_path)
 
     # Position the text in the center and set its duration to match the background
     text_clip = text_clip.with_position("center").with_duration(duration)
@@ -276,6 +276,9 @@ def create_video(image_folder :str,
             Start_duration += audio_clip.duration
             image_clip = add_effects(image_clip)
             raw_clips.append(image_clip)            
+        
+        # Add a small a pause blank audio file that adds itself to every audioclip
+        
         
         #creating the outro clip appending it to raw clips  
         outro_text = "Thank you for watching! Made by ForgeTube team."
@@ -425,13 +428,13 @@ def create_complete_srt(script_folder :str,
 
         
 if __name__ == "__main__":
-    image_folder = "Samples/Images/brain rot"  
-    audio_folder = "Samples/Audio/brain rot/"  
-    script_path = "Samples/templates/brain_rot.json" 
+    image_folder = "Samples/Images/"  
+    audio_folder = "Samples/Audio/"  
+    script_path = "Samples/templates/" 
     font_path = "Samples/font/font.ttf"
-    sub_output_file = "samples/subtitles/.srt/brain_rot.srt"
+    sub_output_file = "samples/subtitles/.srt/"
     topic = extract_topic_from_json(script_path)
-    output_file = f"Samples/Videos/brain_rot.mp4"
+    output_file = f"Samples/Videos/.mp4"
     
     create_complete_srt(script_folder=script_path,
                         audio_file_folder=audio_folder,
