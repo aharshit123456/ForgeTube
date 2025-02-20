@@ -1,0 +1,8 @@
+kokoro
+pydub
+moviepy
+diffusers
+torch
+modal
+google
+serpapi
